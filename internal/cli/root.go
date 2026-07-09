@@ -14,6 +14,9 @@ func NewRootCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 		Short:         "Analyze local agent session files",
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			return loadGlobalOptions(cmd, &opts)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},

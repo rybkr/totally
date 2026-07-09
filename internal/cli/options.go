@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -9,11 +12,13 @@ import (
 	"github.com/rybkr/totally/internal/provider/codex"
 	"github.com/rybkr/totally/internal/session"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 const allAgents = "all"
 
 type globalOptions struct {
+	config   string
 	agent    string
 	homes    []string
 	archived bool
@@ -28,12 +33,103 @@ type timeRange struct {
 }
 
 func addGlobalFlags(cmd *cobra.Command, opts *globalOptions) {
+	cmd.PersistentFlags().StringVar(&opts.config, "config", "", "config file path")
 	cmd.PersistentFlags().StringVar(&opts.agent, "agent", allAgents, "agent session format to discover: all, codex")
 	cmd.PersistentFlags().StringArrayVar(&opts.homes, "home", nil, "agent home directory; may be repeated")
 	cmd.PersistentFlags().BoolVar(&opts.archived, "archived", false, "include archived sessions")
-	cmd.PersistentFlags().StringVar(&opts.since, "since", "", "include sessions at or after a duration or date")
-	cmd.PersistentFlags().StringVar(&opts.until, "until", "", "include sessions at or before a duration or date")
+	cmd.PersistentFlags().StringVar(&opts.since, "since", "", "include sessions at or after TIME (duration units: h, d, w, y; or YYYY-MM-DD/RFC3339)")
+	cmd.PersistentFlags().StringVar(&opts.until, "until", "", "include sessions at or before TIME (duration units: h, d, w, y; or YYYY-MM-DD/RFC3339)")
 	cmd.PersistentFlags().StringVar(&opts.format, "format", "table", "output format: table, json")
+}
+
+func loadGlobalOptions(cmd *cobra.Command, opts *globalOptions) error {
+	v := viper.New()
+	v.SetConfigName("config")
+	v.SetConfigType("toml")
+	v.SetEnvPrefix("TOTALLY")
+	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	v.AutomaticEnv()
+
+	v.SetDefault("agent", allAgents)
+	v.SetDefault("archived", false)
+	v.SetDefault("format", "table")
+
+	for _, key := range []string{"config", "agent", "home", "archived", "since", "until", "format"} {
+		if err := v.BindPFlag(key, cmd.Root().PersistentFlags().Lookup(key)); err != nil {
+			return err
+		}
+	}
+
+	configPath := strings.TrimSpace(v.GetString("config"))
+	if configPath != "" {
+		configPath = expandHomePath(configPath)
+		v.SetConfigFile(configPath)
+	} else if configDir, err := defaultConfigDir(); err == nil {
+		v.AddConfigPath(configDir)
+	}
+
+	if err := v.ReadInConfig(); err != nil {
+		var notFound viper.ConfigFileNotFoundError
+		if configPath != "" || !errors.As(err, &notFound) {
+			return err
+		}
+	}
+
+	opts.config = configPath
+	opts.agent = v.GetString("agent")
+	opts.homes = normalizeHomeValues(v.GetStringSlice("home"))
+	opts.archived = v.GetBool("archived")
+	opts.since = v.GetString("since")
+	opts.until = v.GetString("until")
+	opts.format = v.GetString("format")
+
+	return nil
+}
+
+func defaultConfigDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	if home == "" {
+		return "", fmt.Errorf("could not resolve user home directory")
+	}
+	return filepath.Join(home, ".config", "totally"), nil
+}
+
+func normalizeHomeValues(values []string) []string {
+	var homes []string
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		parts := filepath.SplitList(value)
+		if len(parts) == 0 {
+			homes = append(homes, expandHomePath(value))
+			continue
+		}
+		for _, part := range parts {
+			if part != "" {
+				homes = append(homes, expandHomePath(part))
+			}
+		}
+	}
+	return homes
+}
+
+func expandHomePath(path string) string {
+	if path != "~" && !strings.HasPrefix(path, "~/") && !strings.HasPrefix(path, `~\`) {
+		return path
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	if path == "~" {
+		return home
+	}
+	return filepath.Join(home, path[2:])
 }
 
 func (opts globalOptions) finders() ([]session.Finder, error) {
@@ -89,7 +185,7 @@ func parseTimeBound(value string, now time.Time, endOfDate bool) (time.Time, err
 
 	t, err := time.ParseInLocation(time.DateOnly, value, time.Local)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("expected duration like 7d, date like 2026-07-01, or RFC3339 timestamp")
+		return time.Time{}, fmt.Errorf("expected duration like 24h, 7d, 2w, or 1y; date like 2026-07-01; or RFC3339 timestamp")
 	}
 	if endOfDate {
 		return t.AddDate(0, 0, 1).Add(-time.Nanosecond), nil
@@ -98,12 +194,18 @@ func parseTimeBound(value string, now time.Time, endOfDate bool) (time.Time, err
 }
 
 func parseRelativeDuration(value string) (time.Duration, bool, error) {
-	if strings.HasSuffix(value, "d") {
-		days, err := strconv.Atoi(strings.TrimSuffix(value, "d"))
-		if err != nil || days < 0 {
-			return 0, true, fmt.Errorf("invalid day duration %q", value)
+	for suffix, multiplier := range map[string]time.Duration{
+		"d": 24 * time.Hour,
+		"w": 7 * 24 * time.Hour,
+		"y": 365 * 24 * time.Hour,
+	} {
+		if strings.HasSuffix(value, suffix) {
+			amount, err := strconv.Atoi(strings.TrimSuffix(value, suffix))
+			if err != nil || amount < 0 {
+				return 0, true, fmt.Errorf("invalid duration %q", value)
+			}
+			return time.Duration(amount) * multiplier, true, nil
 		}
-		return time.Duration(days) * 24 * time.Hour, true, nil
 	}
 
 	duration, err := time.ParseDuration(value)

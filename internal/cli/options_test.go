@@ -19,6 +19,34 @@ func TestParseTimeBoundRelativeDays(t *testing.T) {
 	}
 }
 
+func TestParseTimeBoundRelativeWeeks(t *testing.T) {
+	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
+
+	got, err := parseTimeBound("2w", now, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	if !got.Equal(want) {
+		t.Fatalf("got %s, want %s", got, want)
+	}
+}
+
+func TestParseTimeBoundRelativeYears(t *testing.T) {
+	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
+
+	got, err := parseTimeBound("1y", now, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := time.Date(2025, 7, 9, 12, 0, 0, 0, time.UTC)
+	if !got.Equal(want) {
+		t.Fatalf("got %s, want %s", got, want)
+	}
+}
+
 func TestParseTimeBoundDateOnlyUntilIncludesWholeDay(t *testing.T) {
 	got, err := parseTimeBound("2026-07-09", time.Now(), true)
 	if err != nil {
