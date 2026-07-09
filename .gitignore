@@ -1,0 +1,30 @@
+# Build artifacts
+dist/
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go test and coverage output
+*.test
+*.prof
+coverage.out
+coverage.html
+
+# Local environment and tool caches
+.env
+.env.*
+!.env.example
+.cache/
+.tmp/
+tmp/
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
