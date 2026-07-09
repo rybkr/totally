@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"bytes"
@@ -18,8 +18,10 @@ func TestFilesCommandPrintsDiscoveredFiles(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := run(context.Background(), []string{"files", "--home", root}, &stdout, &stderr)
-	if err != nil {
+	cmd := NewRootCommand(&stdout, &stderr)
+	cmd.SetArgs([]string{"files", "--home", root})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
 		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
 	}
 
@@ -38,8 +40,10 @@ func TestFilesCommandPrintsJSON(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := run(context.Background(), []string{"files", "--home", root, "--format", "json"}, &stdout, &stderr)
-	if err != nil {
+	cmd := NewRootCommand(&stdout, &stderr)
+	cmd.SetArgs([]string{"files", "--home", root, "--format", "json"})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
 		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
 	}
 
@@ -52,6 +56,24 @@ func TestFilesCommandPrintsJSON(t *testing.T) {
 	}
 	if files[0].SessionID != "019f44e4-5c01-7d22-9805-50cecaefde49" {
 		t.Fatalf("unexpected session ID: %s", files[0].SessionID)
+	}
+}
+
+func TestFilesCommandDefaultsToAllAgents(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := NewRootCommand(&stdout, &stderr)
+	filesCmd, _, err := cmd.Find([]string{"files"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	flag := filesCmd.Flags().Lookup("agent")
+	if flag == nil {
+		t.Fatal("missing agent flag")
+	}
+	if flag.DefValue != "all" {
+		t.Fatalf("expected default agent all, got %q", flag.DefValue)
 	}
 }
 
