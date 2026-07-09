@@ -17,6 +17,11 @@ import (
 
 const allAgents = "all"
 
+const (
+	outputFormatTable = "table"
+	outputFormatJSON  = "json"
+)
+
 type globalOptions struct {
 	config   string
 	agent    string
@@ -81,9 +86,21 @@ func loadGlobalOptions(cmd *cobra.Command, opts *globalOptions) error {
 	opts.archived = v.GetBool("archived")
 	opts.since = v.GetString("since")
 	opts.until = v.GetString("until")
-	opts.format = v.GetString("format")
+	opts.format = strings.TrimSpace(strings.ToLower(v.GetString("format")))
+	if err := validateOutputFormat(opts.format); err != nil {
+		return err
+	}
 
 	return nil
+}
+
+func validateOutputFormat(format string) error {
+	switch format {
+	case outputFormatTable, outputFormatJSON:
+		return nil
+	default:
+		return fmt.Errorf("unknown format %q", format)
+	}
 }
 
 func defaultConfigDir() (string, error) {
@@ -210,6 +227,9 @@ func parseRelativeDuration(value string) (time.Duration, bool, error) {
 
 	duration, err := time.ParseDuration(value)
 	if err == nil {
+		if duration < 0 {
+			return 0, true, fmt.Errorf("invalid duration %q", value)
+		}
 		return duration, true, nil
 	}
 

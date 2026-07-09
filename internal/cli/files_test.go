@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rybkr/totally/internal/session"
 	"github.com/spf13/cobra"
@@ -94,6 +95,48 @@ func TestFilesCommandFiltersSince(t *testing.T) {
 	}
 	if len(files) != 0 {
 		t.Fatalf("expected no files after since filter, got %d", len(files))
+	}
+}
+
+func TestFilesCommandIncludesRecentLocalRolloutWithRelativeSince(t *testing.T) {
+	root := t.TempDir()
+	recentTime := time.Now().Add(-50 * time.Minute)
+	oldTime := time.Now().Add(-2 * time.Hour)
+	recentID := "019f44e4-5c01-7d22-9805-50cecaefde49"
+	oldID := "019f44e4-5c01-7d22-9805-50cecaefde50"
+	writeRollout(t, root, "sessions/2026/07/08/rollout-"+recentTime.Format("2006-01-02T15-04-05")+"-"+recentID+".jsonl")
+	writeRollout(t, root, "sessions/2026/07/08/rollout-"+oldTime.Format("2006-01-02T15-04-05")+"-"+oldID+".jsonl")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"--since", "1h", "files", "--home", root, "--format", "json"})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	var files []session.FileRef
+	if err := json.Unmarshal(stdout.Bytes(), &files); err != nil {
+		t.Fatalf("invalid JSON output: %v\n%s", err, stdout.String())
+	}
+	if len(files) != 1 || files[0].SessionID != recentID {
+		t.Fatalf("expected recent local rollout only, got %+v", files)
+	}
+}
+
+func TestFilesCommandRejectsInvalidFormatBeforeDiscovery(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"files", "--home", "\x00", "--format", "xml"})
+
+	err := cmd.ExecuteContext(context.Background())
+	if err == nil {
+		t.Fatal("expected invalid format to fail")
+	}
+	if !strings.Contains(err.Error(), `unknown format "xml"`) {
+		t.Fatalf("expected format error, got %v", err)
 	}
 }
 

@@ -19,6 +19,16 @@ func TestParseTimeBoundRelativeDays(t *testing.T) {
 	}
 }
 
+func TestParseTimeBoundRejectsNegativeRelativeDuration(t *testing.T) {
+	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
+
+	for _, value := range []string{"-1h", "-1d", "-2w", "-1y"} {
+		if _, err := parseTimeBound(value, now, false); err == nil {
+			t.Fatalf("expected %q to fail", value)
+		}
+	}
+}
+
 func TestParseTimeBoundRelativeWeeks(t *testing.T) {
 	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
 

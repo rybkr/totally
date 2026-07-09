@@ -69,9 +69,9 @@ func runFiles(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts 
 	}
 
 	switch globals.format {
-	case "table":
+	case outputFormatTable:
 		return printFilesTable(stdout, files)
-	case "json":
+	case outputFormatJSON:
 		return json.NewEncoder(stdout).Encode(files)
 	default:
 		return fmt.Errorf("unknown format %q", globals.format)
