@@ -39,7 +39,7 @@ func TestFinderFindsCodexRolloutFiles(t *testing.T) {
 		t.Fatalf("unexpected session ID: %s", files[0].SessionID)
 	}
 
-	wantCreated := time.Date(2026, 7, 8, 20, 20, 44, 0, time.UTC)
+	wantCreated := time.Date(2026, 7, 8, 20, 20, 44, 0, time.Local)
 	if !files[0].CreatedAt.Equal(wantCreated) {
 		t.Fatalf("unexpected created time: %s", files[0].CreatedAt)
 	}
@@ -100,6 +100,24 @@ func TestFinderReturnsCompressedRolloutWhenPlainIsAbsent(t *testing.T) {
 	}
 	if !files[0].Compressed || files[0].Format != session.FileFormatJSONLZstd {
 		t.Fatalf("expected compressed jsonl.zst, got compressed=%v format=%s", files[0].Compressed, files[0].Format)
+	}
+}
+
+func TestParseRolloutPathInterpretsTimestampAsLocalTime(t *testing.T) {
+	oldLocal := time.Local
+	time.Local = time.FixedZone("TestLocal", -7*60*60)
+	t.Cleanup(func() {
+		time.Local = oldLocal
+	})
+
+	ref, _, ok := parseRolloutPath("rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl")
+	if !ok {
+		t.Fatal("expected rollout path to parse")
+	}
+
+	want := time.Date(2026, 7, 8, 20, 20, 44, 0, time.Local)
+	if !ref.CreatedAt.Equal(want) {
+		t.Fatalf("got %s, want %s", ref.CreatedAt, want)
 	}
 }
 

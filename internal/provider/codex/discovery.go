@@ -163,7 +163,7 @@ func parseRolloutPath(path string) (session.FileRef, string, bool) {
 		return session.FileRef{}, "", false
 	}
 
-	createdAt, err := time.ParseInLocation("2006-01-02T15-04-05", core[:len(core)-37], time.UTC)
+	createdAt, err := time.ParseInLocation("2006-01-02T15-04-05", core[:len(core)-37], time.Local)
 	if err != nil {
 		return session.FileRef{}, "", false
 	}
