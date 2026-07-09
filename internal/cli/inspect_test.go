@@ -86,6 +86,60 @@ func TestInspectCommandPrintsJSON(t *testing.T) {
 	}
 }
 
+func TestInspectCommandWithoutTargetPrintsAggregateSummary(t *testing.T) {
+	root := t.TempDir()
+	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl", inspectFixtureForSession("019f44e4-5c01-7d22-9805-50cecaefde49"))
+	writeRolloutContents(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde50.jsonl", inspectFixtureForSession("019f44e4-5c01-7d22-9805-50cecaefde50"))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"inspect", "--home", root})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	output := stdout.String()
+	for _, want := range []string{
+		"Sessions:   2",
+		"Sources:    codex",
+		"Models:     gpt-5, gpt-5-mini",
+		"Tool calls: 2",
+		"Total:     250",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("missing %q in output:\n%s", want, output)
+		}
+	}
+}
+
+func TestInspectCommandWithoutTargetPrintsJSONSummary(t *testing.T) {
+	root := t.TempDir()
+	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl", inspectFixtureForSession("019f44e4-5c01-7d22-9805-50cecaefde49"))
+	writeRolloutContents(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde50.jsonl", inspectFixtureForSession("019f44e4-5c01-7d22-9805-50cecaefde50"))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"--format", "json", "inspect", "--home", root})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	var summary inspectSummary
+	if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil {
+		t.Fatalf("invalid JSON output: %v\n%s", err, stdout.String())
+	}
+	if summary.Sessions != 2 {
+		t.Fatalf("unexpected session count: %d", summary.Sessions)
+	}
+	if summary.TokenUsage.TotalTokens != 250 {
+		t.Fatalf("unexpected total tokens: %d", summary.TokenUsage.TotalTokens)
+	}
+}
+
 func TestInspectCommandLatestUsesUpdatedTime(t *testing.T) {
 	root := t.TempDir()
 	newerCreatedID := "019f44e4-5c01-7d22-9805-50cecaefde49"
