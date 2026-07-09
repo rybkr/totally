@@ -7,6 +7,8 @@ import (
 )
 
 func NewRootCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
+	var opts globalOptions
+
 	cmd := &cobra.Command{
 		Use:           "totally",
 		Short:         "Analyze local agent session files",
@@ -18,6 +20,7 @@ func NewRootCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 	}
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
-	cmd.AddCommand(newFilesCommand(stdout))
+	addGlobalFlags(cmd, &opts)
+	cmd.AddCommand(newFilesCommand(stdout, &opts))
 	return cmd
 }

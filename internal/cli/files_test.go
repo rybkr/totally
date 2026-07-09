@@ -63,17 +63,35 @@ func TestFilesCommandDefaultsToAllAgents(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd := NewRootCommand(&stdout, &stderr)
-	filesCmd, _, err := cmd.Find([]string{"files"})
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	flag := filesCmd.Flags().Lookup("agent")
+	flag := cmd.PersistentFlags().Lookup("agent")
 	if flag == nil {
 		t.Fatal("missing agent flag")
 	}
 	if flag.DefValue != "all" {
 		t.Fatalf("expected default agent all, got %q", flag.DefValue)
+	}
+}
+
+func TestFilesCommandFiltersSince(t *testing.T) {
+	root := t.TempDir()
+	writeRollout(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := NewRootCommand(&stdout, &stderr)
+	cmd.SetArgs([]string{"--since", "2026-07-09", "files", "--home", root, "--format", "json"})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	var files []session.FileRef
+	if err := json.Unmarshal(stdout.Bytes(), &files); err != nil {
+		t.Fatalf("invalid JSON output: %v\n%s", err, stdout.String())
+	}
+	if len(files) != 0 {
+		t.Fatalf("expected no files after since filter, got %d", len(files))
 	}
 }
 

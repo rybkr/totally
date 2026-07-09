@@ -6,25 +6,17 @@ import (
 	"io"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
-	"github.com/rybkr/totally/internal/provider/codex"
 	"github.com/rybkr/totally/internal/session"
 	"github.com/spf13/cobra"
 )
 
-const allAgents = "all"
-
 type filesOptions struct {
-	agent    string
-	homes    []string
-	archived bool
-	format   string
-	limit    int
+	limit int
 }
 
-func newFilesCommand(stdout io.Writer) *cobra.Command {
+func newFilesCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
 	var opts filesOptions
 
 	cmd := &cobra.Command{
@@ -32,21 +24,21 @@ func newFilesCommand(stdout io.Writer) *cobra.Command {
 		Short: "Find local agent session files",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runFiles(cmd, stdout, opts)
+			return runFiles(cmd, stdout, *globals, opts)
 		},
 	}
 
-	cmd.Flags().StringVar(&opts.agent, "agent", allAgents, "agent session format to discover: all, codex")
-	cmd.Flags().StringArrayVar(&opts.homes, "home", nil, "agent home directory; may be repeated")
-	cmd.Flags().BoolVar(&opts.archived, "archived", false, "include archived sessions")
-	cmd.Flags().StringVar(&opts.format, "format", "table", "output format: table, json")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of files to print")
 
 	return cmd
 }
 
-func runFiles(cmd *cobra.Command, stdout io.Writer, opts filesOptions) error {
-	finders, err := findersForAgent(opts.agent)
+func runFiles(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts filesOptions) error {
+	finders, err := globals.finders()
+	if err != nil {
+		return err
+	}
+	bounds, err := globals.timeRange(time.Now())
 	if err != nil {
 		return err
 	}
@@ -54,14 +46,16 @@ func runFiles(cmd *cobra.Command, stdout io.Writer, opts filesOptions) error {
 	var files []session.FileRef
 	for _, finder := range finders {
 		found, err := finder.FindSessionFiles(cmd.Context(), session.FindOptions{
-			Roots:           opts.homes,
-			IncludeArchived: opts.archived,
+			Roots:           globals.homes,
+			IncludeArchived: globals.archived,
 		})
 		if err != nil {
 			return err
 		}
 		files = append(files, found...)
 	}
+
+	files = filterFilesByTimeRange(files, bounds)
 
 	sort.Slice(files, func(i, j int) bool {
 		if !files[i].CreatedAt.Equal(files[j].CreatedAt) {
@@ -74,24 +68,13 @@ func runFiles(cmd *cobra.Command, stdout io.Writer, opts filesOptions) error {
 		files = files[:opts.limit]
 	}
 
-	switch opts.format {
+	switch globals.format {
 	case "table":
 		return printFilesTable(stdout, files)
 	case "json":
 		return json.NewEncoder(stdout).Encode(files)
 	default:
-		return fmt.Errorf("unknown format %q", opts.format)
-	}
-}
-
-func findersForAgent(agent string) ([]session.Finder, error) {
-	switch strings.ToLower(agent) {
-	case "", allAgents:
-		return []session.Finder{codex.NewFinder()}, nil
-	case string(codex.Source):
-		return []session.Finder{codex.NewFinder()}, nil
-	default:
-		return nil, fmt.Errorf("unknown agent %q", agent)
+		return fmt.Errorf("unknown format %q", globals.format)
 	}
 }
 
