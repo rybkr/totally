@@ -7,16 +7,22 @@
 ```sh
 go run ./cmd/totally --help
 go run ./cmd/totally files --help
+go run ./cmd/totally inspect --help
 ```
 
 ## Commands
 
 ```sh
-totally [global flags] files [--limit N]
+totally [global flags] files [--limit N] [--latest]
+totally [global flags] inspect (<session-id-or-path> | --latest)
 ```
 
 `files` discovers local session transcript files and prints them as a table by
-default.
+default. Use `--latest` to print only the most recently updated session file.
+
+`inspect` parses one session transcript and prints a terminal-friendly summary
+with session metadata, models used, message/tool counts, and token usage.
+Use `--latest` to inspect the most recently updated session.
 
 ## Global Flags
 
@@ -76,8 +82,13 @@ TOTALLY_FORMAT=json
 ```sh
 totally files
 totally files --limit 10
+totally files --latest
 totally --format json files
 totally --agent codex --since 7d files
 totally --home ~/.codex --archived files
+totally inspect --latest
+totally inspect 019f44e4-5c01-7d22-9805-50cecaefde49
+totally inspect ~/.codex/sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl
+totally --format json inspect 019f44e4-5c01-7d22-9805-50cecaefde49
 TOTALLY_FORMAT=json totally files --limit 5
 ```

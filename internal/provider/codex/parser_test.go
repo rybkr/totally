@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -49,10 +50,11 @@ func TestParserParseSession(t *testing.T) {
 	if record.CLIVersion != "0.142.5" {
 		t.Fatalf("unexpected cli version: %s", record.CLIVersion)
 	}
-	if record.Model != "gpt-5" {
-		t.Fatalf("unexpected model: %s", record.Model)
+	wantModels := []string{"gpt-5", "gpt-5-mini"}
+	if !slices.Equal(record.Models, wantModels) {
+		t.Fatalf("unexpected models: %+v", record.Models)
 	}
-	if record.Turns != 1 {
+	if record.Turns != 3 {
 		t.Fatalf("unexpected turns: %d", record.Turns)
 	}
 	if record.Messages != 2 {
@@ -139,6 +141,8 @@ func writeCompressedRollout(t *testing.T, contents string) string {
 func rolloutFixture() string {
 	return `{"timestamp":"2026-07-09T03:20:44Z","type":"session_meta","payload":{"session_id":"019f44e4-5c01-7d22-9805-50cecaefde49","id":"019f44e4-5c01-7d22-9805-50cecaefde49","cwd":"/tmp/project","cli_version":"0.142.5","model_provider":"openai"}}
 {"timestamp":"2026-07-09T03:20:45Z","type":"turn_context","payload":{"turn_id":"turn-1","cwd":"/tmp/project","model":"gpt-5"}}
+{"timestamp":"2026-07-09T03:20:45Z","type":"turn_context","payload":{"turn_id":"turn-2","cwd":"/tmp/project","model":"gpt-5-mini"}}
+{"timestamp":"2026-07-09T03:20:45Z","type":"turn_context","payload":{"turn_id":"turn-3","cwd":"/tmp/project","model":"gpt-5"}}
 {"timestamp":"2026-07-09T03:20:46Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":25,"reasoning_output_tokens":5,"total_tokens":125},"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":25,"reasoning_output_tokens":5,"total_tokens":125},"model_context_window":258400}}}
 {"timestamp":"2026-07-09T03:20:47Z","type":"response_item","payload":{"type":"message","role":"user","content":[]}}
 {"timestamp":"2026-07-09T03:20:48Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[]}}

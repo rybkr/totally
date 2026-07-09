@@ -152,13 +152,23 @@ func applyTurnContext(payload json.RawMessage, record *session.Record) error {
 		return err
 	}
 
-	if turn.Model != "" {
-		record.Model = turn.Model
-	}
+	addModel(record, turn.Model)
 	if record.CWD == "" {
 		record.CWD = turn.CWD
 	}
 	return nil
+}
+
+func addModel(record *session.Record, model string) {
+	if model == "" {
+		return
+	}
+	for _, existing := range record.Models {
+		if existing == model {
+			return
+		}
+	}
+	record.Models = append(record.Models, model)
 }
 
 func applyEventMsg(payload json.RawMessage, record *session.Record) error {

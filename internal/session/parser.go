@@ -24,7 +24,7 @@ type Record struct {
 	SizeBytes int64
 
 	CWD        string
-	Model      string
+	Models     []string
 	Provider   string
 	CLIVersion string
 

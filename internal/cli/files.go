@@ -13,7 +13,8 @@ import (
 )
 
 type filesOptions struct {
-	limit int
+	limit  int
+	latest bool
 }
 
 func newFilesCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
@@ -29,41 +30,23 @@ func newFilesCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
 	}
 
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of files to print")
+	cmd.Flags().BoolVar(&opts.latest, "latest", false, "print only the most recently updated session file")
 
 	return cmd
 }
 
 func runFiles(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts filesOptions) error {
-	finders, err := globals.finders()
-	if err != nil {
-		return err
-	}
-	bounds, err := globals.timeRange(time.Now())
+	files, err := discoverSessionFiles(cmd, globals)
 	if err != nil {
 		return err
 	}
 
-	var files []session.FileRef
-	for _, finder := range finders {
-		found, err := finder.FindSessionFiles(cmd.Context(), session.FindOptions{
-			Roots:           globals.homes,
-			IncludeArchived: globals.archived,
-		})
-		if err != nil {
-			return err
-		}
-		files = append(files, found...)
+	sortFilesByCreated(files)
+
+	if opts.latest {
+		sortFilesByUpdated(files)
+		opts.limit = 1
 	}
-
-	files = filterFilesByTimeRange(files, bounds)
-
-	sort.Slice(files, func(i, j int) bool {
-		if !files[i].CreatedAt.Equal(files[j].CreatedAt) {
-			return files[i].CreatedAt.After(files[j].CreatedAt)
-		}
-		return files[i].Path > files[j].Path
-	})
-
 	if opts.limit > 0 && len(files) > opts.limit {
 		files = files[:opts.limit]
 	}
@@ -79,17 +62,18 @@ func runFiles(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts 
 }
 
 func printFilesTable(w io.Writer, files []session.FileRef) error {
-	if _, err := fmt.Fprintln(w, "SOURCE\tFORMAT\tSESSION\tCREATED\tSIZE\tPATH"); err != nil {
+	if _, err := fmt.Fprintln(w, "SOURCE\tFORMAT\tSESSION\tCREATED\tUPDATED\tSIZE\tPATH"); err != nil {
 		return err
 	}
 	for _, file := range files {
 		if _, err := fmt.Fprintf(
 			w,
-			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			file.Source,
 			file.Format,
 			file.SessionID,
 			formatTime(file.CreatedAt),
+			formatTime(file.UpdatedAt),
 			formatBytes(file.SizeBytes),
 			file.Path,
 		); err != nil {
@@ -97,6 +81,70 @@ func printFilesTable(w io.Writer, files []session.FileRef) error {
 		}
 	}
 	return nil
+}
+
+func discoverSessionFiles(cmd *cobra.Command, globals globalOptions) ([]session.FileRef, error) {
+	finders, err := globals.finders()
+	if err != nil {
+		return nil, err
+	}
+	bounds, err := globals.timeRange(time.Now())
+	if err != nil {
+		return nil, err
+	}
+
+	var files []session.FileRef
+	for _, finder := range finders {
+		found, err := finder.FindSessionFiles(cmd.Context(), session.FindOptions{
+			Roots:           globals.homes,
+			IncludeArchived: globals.archived,
+		})
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, found...)
+	}
+
+	return filterFilesByTimeRange(files, bounds), nil
+}
+
+func latestSessionFile(cmd *cobra.Command, globals globalOptions) (session.FileRef, error) {
+	files, err := discoverSessionFiles(cmd, globals)
+	if err != nil {
+		return session.FileRef{}, err
+	}
+	if len(files) == 0 {
+		return session.FileRef{}, fmt.Errorf("no session files found")
+	}
+	sortFilesByUpdated(files)
+	return files[0], nil
+}
+
+func sortFilesByCreated(files []session.FileRef) {
+	sort.Slice(files, func(i, j int) bool {
+		if !files[i].CreatedAt.Equal(files[j].CreatedAt) {
+			return files[i].CreatedAt.After(files[j].CreatedAt)
+		}
+		return files[i].Path > files[j].Path
+	})
+}
+
+func sortFilesByUpdated(files []session.FileRef) {
+	sort.Slice(files, func(i, j int) bool {
+		left := latestComparableTime(files[i])
+		right := latestComparableTime(files[j])
+		if !left.Equal(right) {
+			return left.After(right)
+		}
+		return files[i].Path > files[j].Path
+	})
+}
+
+func latestComparableTime(file session.FileRef) time.Time {
+	if !file.UpdatedAt.IsZero() {
+		return file.UpdatedAt
+	}
+	return file.CreatedAt
 }
 
 func formatTime(t time.Time) string {

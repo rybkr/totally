@@ -160,6 +160,17 @@ func (opts globalOptions) finders() ([]session.Finder, error) {
 	}
 }
 
+func (opts globalOptions) parsers() ([]session.Parser, error) {
+	switch strings.ToLower(opts.agent) {
+	case "", allAgents:
+		return []session.Parser{codex.NewParser()}, nil
+	case string(codex.Source):
+		return []session.Parser{codex.NewParser()}, nil
+	default:
+		return nil, fmt.Errorf("unknown agent %q", opts.agent)
+	}
+}
+
 func (opts globalOptions) timeRange(now time.Time) (timeRange, error) {
 	var result timeRange
 	var err error

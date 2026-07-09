@@ -29,7 +29,7 @@ func TestFilesCommandPrintsDiscoveredFiles(t *testing.T) {
 	}
 
 	output := stdout.String()
-	if !strings.Contains(output, "SOURCE\tFORMAT\tSESSION\tCREATED\tSIZE\tPATH") {
+	if !strings.Contains(output, "SOURCE\tFORMAT\tSESSION\tCREATED\tUPDATED\tSIZE\tPATH") {
 		t.Fatalf("missing header in output:\n%s", output)
 	}
 	if !strings.Contains(output, path) {
@@ -122,6 +122,34 @@ func TestFilesCommandIncludesRecentLocalRolloutWithRelativeSince(t *testing.T) {
 	}
 	if len(files) != 1 || files[0].SessionID != recentID {
 		t.Fatalf("expected recent local rollout only, got %+v", files)
+	}
+}
+
+func TestFilesCommandLatestUsesUpdatedTime(t *testing.T) {
+	root := t.TempDir()
+	createdNewerUpdatedOlder := writeRollout(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl")
+	createdOlderUpdatedNewer := writeRollout(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde50.jsonl")
+	setFileTimes(t, createdNewerUpdatedOlder, time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC))
+	setFileTimes(t, createdOlderUpdatedNewer, time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"files", "--home", root, "--latest", "--format", "json"})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	var files []session.FileRef
+	if err := json.Unmarshal(stdout.Bytes(), &files); err != nil {
+		t.Fatalf("invalid JSON output: %v\n%s", err, stdout.String())
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 latest file, got %d", len(files))
+	}
+	if files[0].SessionID != "019f44e4-5c01-7d22-9805-50cecaefde50" {
+		t.Fatalf("expected updated-newer session, got %+v", files[0])
 	}
 }
 
@@ -240,12 +268,26 @@ func writeConfig(t *testing.T, contents string) string {
 func writeRollout(t *testing.T, root string, rel string) string {
 	t.Helper()
 
+	return writeRolloutContents(t, root, rel, "{}\n")
+}
+
+func writeRolloutContents(t *testing.T, root string, rel string, contents string) string {
+	t.Helper()
+
 	path := filepath.Join(root, filepath.FromSlash(rel))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("{}\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func setFileTimes(t *testing.T, path string, when time.Time) {
+	t.Helper()
+
+	if err := os.Chtimes(path, when, when); err != nil {
+		t.Fatal(err)
+	}
 }
