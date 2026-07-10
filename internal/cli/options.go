@@ -22,6 +22,26 @@ const (
 	outputFormatJSON  = "json"
 )
 
+type usageError struct {
+	err error
+}
+
+func (err usageError) Error() string {
+	return err.err.Error()
+}
+
+func (err usageError) Unwrap() error {
+	return err.err
+}
+
+func ExitCode(err error) int {
+	var usage usageError
+	if errors.As(err, &usage) {
+		return 2
+	}
+	return 1
+}
+
 type globalOptions struct {
 	config   string
 	agent    string
@@ -99,7 +119,7 @@ func validateOutputFormat(format string) error {
 	case outputFormatTable, outputFormatJSON:
 		return nil
 	default:
-		return fmt.Errorf("unknown format %q", format)
+		return usageError{err: fmt.Errorf("unknown format %q", format)}
 	}
 }
 

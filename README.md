@@ -16,7 +16,7 @@ go run ./cmd/totally inspect --help
 ```sh
 totally [global flags] files [--limit N] [--latest] [--summary | --count | --paths]
 totally [global flags] sessions [--limit N] [--latest] [--summary | --ids | --paths]
-totally [global flags] inspect [session-id-or-path | --latest]
+totally [global flags] inspect <session-id>
 ```
 
 `files` discovers local session transcript files and prints them as a table by
@@ -32,11 +32,19 @@ combine it with `--limit N` to print the latest N sessions. Use `--summary` for
 aggregate session totals, `--ids` for newline-delimited session IDs, or
 `--paths` for backing transcript paths.
 
-`inspect` parses session transcripts and prints a terminal-friendly usage
-summary with metadata, models used, message/tool counts, and token usage. With
-no target, it summarizes every discovered session matching the global filters.
-Pass a session ID or file path to inspect one session. Use `--latest` to inspect
-the most recently updated session.
+`inspect` parses one session transcript and prints a detailed, terminal-friendly
+report with metadata, models used, activity counts, and token usage. It accepts
+a full session UUID. Prefix matching may be added later, but ambiguous prefixes
+should be rejected.
+
+`inspect` intentionally does not calculate cost. Cost reporting belongs in a
+separate command where pricing source and assumptions can be explicit.
+
+Inspect exit behavior:
+
+- `0`: Session found and parsed.
+- `1`: Session ID is missing, malformed, unknown, or ambiguous.
+- `2`: Usage/configuration error, such as an invalid `--format` value.
 
 ## Global Flags
 
@@ -113,11 +121,7 @@ totally sessions --ids
 totally sessions --paths
 totally --format json sessions
 totally --format json sessions --summary
-totally inspect
-totally --since 7d inspect
-totally inspect --latest
 totally inspect 019f44e4-5c01-7d22-9805-50cecaefde49
-totally inspect ~/.codex/sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl
-totally --format json inspect 019f44e4-5c01-7d22-9805-50cecaefde49
+totally inspect 019f44e4-5c01-7d22-9805-50cecaefde49 --format json
 TOTALLY_FORMAT=json totally files --limit 5
 ```

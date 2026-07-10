@@ -163,12 +163,12 @@ func TestSessionsCommandLatestLimitPrintsLatestSessions(t *testing.T) {
 	oldestID := "019f44e4-5c01-7d22-9805-50cecaefde49"
 	latestID := "019f44e4-5c01-7d22-9805-50cecaefde50"
 	secondLatestID := "019f44e4-5c01-7d22-9805-50cecaefde51"
-	oldest := writeRolloutContents(t, root, "sessions/2026/07/07/rollout-2026-07-07T20-20-44-"+oldestID+".jsonl", inspectFixtureForSession(oldestID))
-	latest := writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+latestID+".jsonl", inspectFixtureForSession(latestID))
-	secondLatest := writeRolloutContents(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-"+secondLatestID+".jsonl", inspectFixtureForSession(secondLatestID))
-	setFileTimes(t, oldest, time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC))
+	oldest := writeRolloutContents(t, root, "sessions/2026/07/07/rollout-2026-07-07T20-20-44-"+oldestID+".jsonl", inspectFixtureForSessionAt(oldestID, time.Date(2026, 7, 7, 3, 20, 44, 0, time.UTC)))
+	latest := writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+latestID+".jsonl", inspectFixtureForSessionAt(latestID, time.Date(2026, 7, 10, 3, 20, 44, 0, time.UTC)))
+	secondLatest := writeRolloutContents(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-"+secondLatestID+".jsonl", inspectFixtureForSessionAt(secondLatestID, time.Date(2026, 7, 9, 3, 20, 44, 0, time.UTC)))
+	setFileTimes(t, oldest, time.Date(2026, 7, 12, 10, 0, 0, 0, time.UTC))
 	setFileTimes(t, secondLatest, time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC))
-	setFileTimes(t, latest, time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC))
+	setFileTimes(t, latest, time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC))
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

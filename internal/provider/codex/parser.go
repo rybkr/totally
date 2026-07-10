@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/rybkr/totally/internal/session"
@@ -46,6 +47,7 @@ func (Parser) ParseSession(ctx context.Context, file session.FileRef) (session.R
 	}
 
 	lineReader := bufio.NewReader(reader)
+	sawTimestamp := false
 
 	for {
 		line, err := lineReader.ReadBytes('\n')
@@ -59,7 +61,7 @@ func (Parser) ParseSession(ctx context.Context, file session.FileRef) (session.R
 			return session.Record{}, err
 		}
 		if len(bytes.TrimSpace(line)) > 0 {
-			if err := applyRolloutLine(line, &record); err != nil {
+			if err := applyRolloutLine(line, &record, &sawTimestamp); err != nil {
 				return session.Record{}, err
 			}
 		}
@@ -96,13 +98,21 @@ func openRollout(file session.FileRef) (io.Reader, func(), error) {
 	}
 }
 
-func applyRolloutLine(line []byte, record *session.Record) error {
+func applyRolloutLine(line []byte, record *session.Record, sawTimestamp *bool) error {
 	var envelope struct {
-		Type    string          `json:"type"`
-		Payload json.RawMessage `json:"payload"`
+		Timestamp time.Time       `json:"timestamp"`
+		Type      string          `json:"type"`
+		Payload   json.RawMessage `json:"payload"`
 	}
 	if err := json.Unmarshal(line, &envelope); err != nil {
 		return err
+	}
+	if !envelope.Timestamp.IsZero() {
+		if !*sawTimestamp {
+			record.CreatedAt = envelope.Timestamp
+		}
+		record.UpdatedAt = envelope.Timestamp
+		*sawTimestamp = true
 	}
 
 	switch envelope.Type {

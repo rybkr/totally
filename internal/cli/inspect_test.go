@@ -7,11 +7,127 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/rybkr/totally/internal/session"
 )
 
-func TestInspectCommandPrintsSessionSummaryForPath(t *testing.T) {
+func TestInspectCommandPrintsSingleSessionReport(t *testing.T) {
+	root := t.TempDir()
+	sessionID := "019f44e4-5c01-7d22-9805-50cecaefde49"
+	path := writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+sessionID+".jsonl", inspectFixtureForSession(sessionID))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"inspect", "--home", root, sessionID})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	output := stdout.String()
+	for _, want := range []string{
+		"Session:      " + sessionID,
+		"Source:       codex",
+		"Status:       -",
+		"Created:      2026-07-09T03:20:44Z",
+		"Updated:      2026-07-09T03:20:48Z",
+		"Duration:     4s",
+		"Project:      /tmp/project",
+		"Transcript:   " + path,
+		"Models:       gpt-5, gpt-5-mini",
+		"ACTIVITY",
+		"Turns  Messages  Tool calls",
+		"2      1         1",
+		"TOKEN USAGE",
+		"Input  Cached input  Output  Reasoning  Total",
+		"100    40            25      5          125",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("missing %q in output:\n%s", want, output)
+		}
+	}
+}
+
+func TestInspectCommandPrintsJSONReport(t *testing.T) {
+	root := t.TempDir()
+	sessionID := "019f44e4-5c01-7d22-9805-50cecaefde49"
+	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+sessionID+".jsonl", inspectFixtureForSession(sessionID))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"inspect", "--home", root, sessionID, "--format", "json"})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	var report inspectReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("invalid JSON output: %v\n%s", err, stdout.String())
+	}
+	if report.SessionID != sessionID {
+		t.Fatalf("unexpected session ID: %s", report.SessionID)
+	}
+	if report.Status != nil {
+		t.Fatalf("expected unknown status to be null, got %q", *report.Status)
+	}
+	if report.CreatedAt == nil || *report.CreatedAt != "2026-07-09T03:20:44Z" {
+		t.Fatalf("unexpected created_at: %+v", report.CreatedAt)
+	}
+	if report.UpdatedAt == nil || *report.UpdatedAt != "2026-07-09T03:20:48Z" {
+		t.Fatalf("unexpected updated_at: %+v", report.UpdatedAt)
+	}
+	if report.DurationSeconds == nil || *report.DurationSeconds != 4 {
+		t.Fatalf("unexpected duration_seconds: %+v", report.DurationSeconds)
+	}
+	if report.Project == nil || *report.Project != "/tmp/project" {
+		t.Fatalf("unexpected project: %+v", report.Project)
+	}
+	if len(report.Models) != 2 || report.Models[0] != "gpt-5" || report.Models[1] != "gpt-5-mini" {
+		t.Fatalf("unexpected models: %+v", report.Models)
+	}
+	if report.Turns != 2 || report.Messages != 1 || report.ToolCalls != 1 {
+		t.Fatalf("unexpected activity: %+v", report)
+	}
+	if report.TokenUsage.TotalTokens != 125 || report.TokenUsage.ReasoningTokens != 5 {
+		t.Fatalf("unexpected token usage: %+v", report.TokenUsage)
+	}
+}
+
+func TestInspectCommandRejectsMissingSessionID(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"inspect"})
+
+	err := cmd.ExecuteContext(context.Background())
+	if err == nil {
+		t.Fatal("expected missing session ID to fail")
+	}
+	if ExitCode(err) != 1 {
+		t.Fatalf("expected exit code 1, got %d", ExitCode(err))
+	}
+}
+
+func TestInspectCommandRejectsMalformedSessionID(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"inspect", "missing-session"})
+
+	err := cmd.ExecuteContext(context.Background())
+	if err == nil {
+		t.Fatal("expected malformed session ID to fail")
+	}
+	if !strings.Contains(err.Error(), `malformed session ID "missing-session"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ExitCode(err) != 1 {
+		t.Fatalf("expected exit code 1, got %d", ExitCode(err))
+	}
+}
+
+func TestInspectCommandRejectsPathTarget(t *testing.T) {
 	root := t.TempDir()
 	path := writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl", inspectFixture())
 
@@ -20,161 +136,47 @@ func TestInspectCommandPrintsSessionSummaryForPath(t *testing.T) {
 	cmd := newTestRootCommand(t, &stdout, &stderr)
 	cmd.SetArgs([]string{"inspect", path})
 
-	if err := cmd.ExecuteContext(context.Background()); err != nil {
-		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	err := cmd.ExecuteContext(context.Background())
+	if err == nil {
+		t.Fatal("expected path target to fail")
 	}
-
-	output := stdout.String()
-	for _, want := range []string{
-		"Session:    019f44e4-5c01-7d22-9805-50cecaefde49",
-		"Source:     codex",
-		"Path:       " + path,
-		"Models:     gpt-5, gpt-5-mini",
-		"Tool calls: 1",
-		"Tokens:",
-		"Total:     125",
-	} {
-		if !strings.Contains(output, want) {
-			t.Fatalf("missing %q in output:\n%s", want, output)
-		}
-	}
-}
-
-func TestInspectCommandFindsSessionByID(t *testing.T) {
-	root := t.TempDir()
-	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl", inspectFixture())
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd := newTestRootCommand(t, &stdout, &stderr)
-	cmd.SetArgs([]string{"inspect", "--home", root, "019f44e4-5c01-7d22-9805-50cecaefde49"})
-
-	if err := cmd.ExecuteContext(context.Background()); err != nil {
-		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
-	}
-
-	if !strings.Contains(stdout.String(), "Session:    019f44e4-5c01-7d22-9805-50cecaefde49") {
-		t.Fatalf("unexpected output:\n%s", stdout.String())
-	}
-}
-
-func TestInspectCommandPrintsJSON(t *testing.T) {
-	root := t.TempDir()
-	path := writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl", inspectFixture())
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd := newTestRootCommand(t, &stdout, &stderr)
-	cmd.SetArgs([]string{"--format", "json", "inspect", path})
-
-	if err := cmd.ExecuteContext(context.Background()); err != nil {
-		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
-	}
-
-	var record session.Record
-	if err := json.Unmarshal(stdout.Bytes(), &record); err != nil {
-		t.Fatalf("invalid JSON output: %v\n%s", err, stdout.String())
-	}
-	if record.SessionID != "019f44e4-5c01-7d22-9805-50cecaefde49" {
-		t.Fatalf("unexpected session ID: %s", record.SessionID)
-	}
-	if record.TokenUsage.TotalTokens != 125 {
-		t.Fatalf("unexpected total tokens: %d", record.TokenUsage.TotalTokens)
-	}
-	if len(record.Models) != 2 || record.Models[0] != "gpt-5" || record.Models[1] != "gpt-5-mini" {
-		t.Fatalf("unexpected models: %+v", record.Models)
-	}
-}
-
-func TestInspectCommandWithoutTargetPrintsAggregateSummary(t *testing.T) {
-	root := t.TempDir()
-	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl", inspectFixtureForSession("019f44e4-5c01-7d22-9805-50cecaefde49"))
-	writeRolloutContents(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde50.jsonl", inspectFixtureForSession("019f44e4-5c01-7d22-9805-50cecaefde50"))
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd := newTestRootCommand(t, &stdout, &stderr)
-	cmd.SetArgs([]string{"inspect", "--home", root})
-
-	if err := cmd.ExecuteContext(context.Background()); err != nil {
-		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
-	}
-
-	output := stdout.String()
-	for _, want := range []string{
-		"Sessions:   2",
-		"Sources:    codex",
-		"Models:     gpt-5, gpt-5-mini",
-		"Tool calls: 2",
-		"Total:     250",
-	} {
-		if !strings.Contains(output, want) {
-			t.Fatalf("missing %q in output:\n%s", want, output)
-		}
-	}
-}
-
-func TestInspectCommandWithoutTargetPrintsJSONSummary(t *testing.T) {
-	root := t.TempDir()
-	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl", inspectFixtureForSession("019f44e4-5c01-7d22-9805-50cecaefde49"))
-	writeRolloutContents(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde50.jsonl", inspectFixtureForSession("019f44e4-5c01-7d22-9805-50cecaefde50"))
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd := newTestRootCommand(t, &stdout, &stderr)
-	cmd.SetArgs([]string{"--format", "json", "inspect", "--home", root})
-
-	if err := cmd.ExecuteContext(context.Background()); err != nil {
-		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
-	}
-
-	var summary inspectSummary
-	if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil {
-		t.Fatalf("invalid JSON output: %v\n%s", err, stdout.String())
-	}
-	if summary.Sessions != 2 {
-		t.Fatalf("unexpected session count: %d", summary.Sessions)
-	}
-	if summary.TokenUsage.TotalTokens != 250 {
-		t.Fatalf("unexpected total tokens: %d", summary.TokenUsage.TotalTokens)
-	}
-}
-
-func TestInspectCommandLatestUsesUpdatedTime(t *testing.T) {
-	root := t.TempDir()
-	newerCreatedID := "019f44e4-5c01-7d22-9805-50cecaefde49"
-	newerUpdatedID := "019f44e4-5c01-7d22-9805-50cecaefde50"
-	createdNewerUpdatedOlder := writeRolloutContents(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-"+newerCreatedID+".jsonl", inspectFixtureForSession(newerCreatedID))
-	createdOlderUpdatedNewer := writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+newerUpdatedID+".jsonl", inspectFixtureForSession(newerUpdatedID))
-	setFileTimes(t, createdNewerUpdatedOlder, time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC))
-	setFileTimes(t, createdOlderUpdatedNewer, time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC))
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd := newTestRootCommand(t, &stdout, &stderr)
-	cmd.SetArgs([]string{"inspect", "--home", root, "--latest"})
-
-	if err := cmd.ExecuteContext(context.Background()); err != nil {
-		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
-	}
-
-	if !strings.Contains(stdout.String(), "Session:    "+newerUpdatedID) {
-		t.Fatalf("expected updated-newer session, got:\n%s", stdout.String())
+	if !strings.Contains(err.Error(), "malformed session ID") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestInspectCommandErrorsForUnknownSessionID(t *testing.T) {
+	root := t.TempDir()
+	sessionID := "019f44e4-5c01-7d22-9805-50cecaefde49"
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd := newTestRootCommand(t, &stdout, &stderr)
-	cmd.SetArgs([]string{"inspect", "missing-session"})
+	cmd.SetArgs([]string{"inspect", "--home", root, sessionID})
 
 	err := cmd.ExecuteContext(context.Background())
 	if err == nil {
 		t.Fatal("expected missing session to fail")
 	}
-	if !strings.Contains(err.Error(), `no session found for "missing-session"`) {
+	if !strings.Contains(err.Error(), `no session found for "`+sessionID+`"`) {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if ExitCode(err) != 1 {
+		t.Fatalf("expected exit code 1, got %d", ExitCode(err))
+	}
+}
+
+func TestInspectCommandInvalidFormatIsUsageError(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"inspect", "019f44e4-5c01-7d22-9805-50cecaefde49", "--format", "xml"})
+
+	err := cmd.ExecuteContext(context.Background())
+	if err == nil {
+		t.Fatal("expected invalid format to fail")
+	}
+	if ExitCode(err) != 2 {
+		t.Fatalf("expected exit code 2, got %d", ExitCode(err))
 	}
 }
 
@@ -183,11 +185,15 @@ func inspectFixture() string {
 }
 
 func inspectFixtureForSession(sessionID string) string {
-	return `{"timestamp":"2026-07-09T03:20:44Z","type":"session_meta","payload":{"session_id":"` + sessionID + `","cwd":"/tmp/project","cli_version":"0.142.5","model_provider":"openai"}}
-{"timestamp":"2026-07-09T03:20:45Z","type":"turn_context","payload":{"cwd":"/tmp/project","model":"gpt-5"}}
-{"timestamp":"2026-07-09T03:20:45Z","type":"turn_context","payload":{"cwd":"/tmp/project","model":"gpt-5-mini"}}
-{"timestamp":"2026-07-09T03:20:46Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":25,"reasoning_output_tokens":5,"total_tokens":125}}}}
-{"timestamp":"2026-07-09T03:20:47Z","type":"response_item","payload":{"type":"message","role":"user","content":[]}}
-{"timestamp":"2026-07-09T03:20:48Z","type":"response_item","payload":{"type":"function_call","name":"exec_command"}}
+	return inspectFixtureForSessionAt(sessionID, time.Date(2026, 7, 9, 3, 20, 44, 0, time.UTC))
+}
+
+func inspectFixtureForSessionAt(sessionID string, start time.Time) string {
+	return `{"timestamp":"` + start.Format(time.RFC3339) + `","type":"session_meta","payload":{"session_id":"` + sessionID + `","cwd":"/tmp/project","cli_version":"0.142.5","model_provider":"openai"}}
+{"timestamp":"` + start.Add(time.Second).Format(time.RFC3339) + `","type":"turn_context","payload":{"cwd":"/tmp/project","model":"gpt-5"}}
+{"timestamp":"` + start.Add(time.Second).Format(time.RFC3339) + `","type":"turn_context","payload":{"cwd":"/tmp/project","model":"gpt-5-mini"}}
+{"timestamp":"` + start.Add(2*time.Second).Format(time.RFC3339) + `","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":25,"reasoning_output_tokens":5,"total_tokens":125}}}}
+{"timestamp":"` + start.Add(3*time.Second).Format(time.RFC3339) + `","type":"response_item","payload":{"type":"message","role":"user","content":[]}}
+{"timestamp":"` + start.Add(4*time.Second).Format(time.RFC3339) + `","type":"response_item","payload":{"type":"function_call","name":"exec_command"}}
 `
 }

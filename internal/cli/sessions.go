@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/rybkr/totally/internal/session"
 	"github.com/spf13/cobra"
@@ -49,20 +51,20 @@ func runSessions(cmd *cobra.Command, stdout io.Writer, globals globalOptions, op
 		return err
 	}
 
-	sortFilesByCreated(files)
+	records, err := parseSessionFiles(cmd, globals, files)
+	if err != nil {
+		return err
+	}
+
+	sortRecordsByCreated(records)
 	if opts.latest {
-		sortFilesByUpdated(files)
+		sortRecordsByUpdated(records)
 		if opts.limit == 0 {
 			opts.limit = 1
 		}
 	}
-	if opts.limit > 0 && len(files) > opts.limit {
-		files = files[:opts.limit]
-	}
-
-	records, err := parseSessionFiles(cmd, globals, files)
-	if err != nil {
-		return err
+	if opts.limit > 0 && len(records) > opts.limit {
+		records = records[:opts.limit]
 	}
 
 	if opts.ids {
@@ -172,4 +174,31 @@ func printSessionPaths(w io.Writer, records []session.Record) error {
 		}
 	}
 	return nil
+}
+
+func sortRecordsByCreated(records []session.Record) {
+	sort.Slice(records, func(i, j int) bool {
+		if !records[i].CreatedAt.Equal(records[j].CreatedAt) {
+			return records[i].CreatedAt.After(records[j].CreatedAt)
+		}
+		return records[i].Path > records[j].Path
+	})
+}
+
+func sortRecordsByUpdated(records []session.Record) {
+	sort.Slice(records, func(i, j int) bool {
+		left := latestRecordActivityTime(records[i])
+		right := latestRecordActivityTime(records[j])
+		if !left.Equal(right) {
+			return left.After(right)
+		}
+		return records[i].Path > records[j].Path
+	})
+}
+
+func latestRecordActivityTime(record session.Record) time.Time {
+	if !record.UpdatedAt.IsZero() {
+		return record.UpdatedAt
+	}
+	return record.CreatedAt
 }

@@ -266,18 +266,6 @@ func discoverSessionFiles(cmd *cobra.Command, globals globalOptions) ([]session.
 	return filterFilesByTimeRange(files, bounds), nil
 }
 
-func latestSessionFile(cmd *cobra.Command, globals globalOptions) (session.FileRef, error) {
-	files, err := discoverSessionFiles(cmd, globals)
-	if err != nil {
-		return session.FileRef{}, err
-	}
-	if len(files) == 0 {
-		return session.FileRef{}, fmt.Errorf("no session files found")
-	}
-	sortFilesByUpdated(files)
-	return files[0], nil
-}
-
 func sortFilesByCreated(files []session.FileRef) {
 	sort.Slice(files, func(i, j int) bool {
 		if !files[i].CreatedAt.Equal(files[j].CreatedAt) {

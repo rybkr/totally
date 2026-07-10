@@ -2,21 +2,19 @@ package cli
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/rybkr/totally/internal/session"
 	"github.com/spf13/cobra"
 )
 
-type inspectOptions struct {
-	latest bool
-}
+var fullSessionIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 type inspectSummary struct {
 	Sessions int
@@ -40,50 +38,25 @@ type inspectSummary struct {
 }
 
 func newInspectCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
-	var opts inspectOptions
-
 	cmd := &cobra.Command{
-		Use:   "inspect [session-id-or-path]",
-		Short: "Inspect local agent session usage",
-		Args: func(cmd *cobra.Command, args []string) error {
-			if opts.latest {
-				return cobra.NoArgs(cmd, args)
-			}
-			return cobra.MaximumNArgs(1)(cmd, args)
-		},
+		Use:   "inspect <session-id>",
+		Short: "Show a detailed, single-session report",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runInspect(cmd, stdout, *globals, opts, args)
+			return runInspect(cmd, stdout, *globals, args)
 		},
 	}
-
-	cmd.Flags().BoolVar(&opts.latest, "latest", false, "inspect the most recently updated session file")
 
 	return cmd
 }
 
-func runInspect(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts inspectOptions, args []string) error {
+func runInspect(cmd *cobra.Command, stdout io.Writer, globals globalOptions, args []string) error {
 	parsers, err := globals.parsers()
 	if err != nil {
 		return err
 	}
 
-	if len(args) == 0 && !opts.latest {
-		records, err := parseDiscoveredSessions(cmd, globals, parsers)
-		if err != nil {
-			return err
-		}
-		summary := summarizeRecords(records)
-		switch globals.format {
-		case outputFormatTable:
-			return printInspectSummary(stdout, summary)
-		case outputFormatJSON:
-			return json.NewEncoder(stdout).Encode(summary)
-		default:
-			return fmt.Errorf("unknown format %q", globals.format)
-		}
-	}
-
-	file, err := resolveInspectTarget(cmd, globals, opts, args)
+	file, err := resolveInspectSessionID(cmd, globals, args[0])
 	if err != nil {
 		return err
 	}
@@ -98,11 +71,12 @@ func runInspect(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opt
 		return err
 	}
 
+	report := newInspectReport(record)
 	switch globals.format {
 	case outputFormatTable:
-		return printInspect(stdout, record)
+		return printInspectReport(stdout, report)
 	case outputFormatJSON:
-		return json.NewEncoder(stdout).Encode(record)
+		return json.NewEncoder(stdout).Encode(report)
 	default:
 		return fmt.Errorf("unknown format %q", globals.format)
 	}
@@ -113,18 +87,26 @@ func parseDiscoveredSessions(cmd *cobra.Command, globals globalOptions, parsers 
 	if err != nil {
 		return nil, err
 	}
-	sortFilesByCreated(files)
-	return parseSessionFilesWithParsers(cmd, parsers, files)
+	records, err := parseSessionFilesWithParsers(cmd, parsers, files)
+	if err != nil {
+		return nil, err
+	}
+	sortRecordsByCreated(records)
+	return records, nil
 }
 
-func resolveInspectTarget(cmd *cobra.Command, globals globalOptions, opts inspectOptions, args []string) (session.FileRef, error) {
-	if opts.latest {
-		return latestSessionFile(cmd, globals)
+func parserForSource(parsers []session.Parser, source session.Source) (session.Parser, error) {
+	for _, parser := range parsers {
+		if parser.Source() == source {
+			return parser, nil
+		}
 	}
+	return nil, fmt.Errorf("no parser registered for source %q", source)
+}
 
-	target := args[0]
-	if file, ok, err := fileRefFromPath(target); ok || err != nil {
-		return file, err
+func resolveInspectSessionID(cmd *cobra.Command, globals globalOptions, target string) (session.FileRef, error) {
+	if !fullSessionIDPattern.MatchString(target) {
+		return session.FileRef{}, fmt.Errorf("malformed session ID %q: expected full session UUID", target)
 	}
 
 	finders, err := globals.finders()
@@ -142,7 +124,7 @@ func resolveInspectTarget(cmd *cobra.Command, globals globalOptions, opts inspec
 			return session.FileRef{}, err
 		}
 		for _, file := range files {
-			if file.SessionID == target {
+			if strings.EqualFold(file.SessionID, target) {
 				matches = append(matches, file)
 			}
 		}
@@ -154,61 +136,67 @@ func resolveInspectTarget(cmd *cobra.Command, globals globalOptions, opts inspec
 	case 1:
 		return matches[0], nil
 	default:
-		return session.FileRef{}, fmt.Errorf("multiple sessions found for %q; pass a file path or narrow --agent", target)
+		return session.FileRef{}, fmt.Errorf("multiple sessions found for %q; pass --agent or --home to narrow the search", target)
 	}
 }
 
-func fileRefFromPath(target string) (session.FileRef, bool, error) {
-	path := expandHomePath(target)
-	info, err := os.Stat(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return session.FileRef{}, false, nil
-		}
-		return session.FileRef{}, true, err
-	}
-	if info.IsDir() {
-		return session.FileRef{}, true, fmt.Errorf("%q is a directory, expected a session file", target)
-	}
-
-	format := session.FileFormatJSONL
-	compressed := false
-	switch {
-	case strings.HasSuffix(path, ".jsonl.zst"):
-		format = session.FileFormatJSONLZstd
-		compressed = true
-	case strings.HasSuffix(path, ".jsonl"):
-		format = session.FileFormatJSONL
-	default:
-		return session.FileRef{}, true, fmt.Errorf("unsupported session file extension %q", filepath.Ext(path))
-	}
-
-	return session.FileRef{
-		Source:     sourceForPath(path),
-		Role:       session.FileRoleTranscript,
-		Format:     format,
-		Path:       path,
-		Compressed: compressed,
-		UpdatedAt:  info.ModTime(),
-		SizeBytes:  info.Size(),
-	}, true, nil
+type inspectReport struct {
+	SessionID       string                  `json:"session_id"`
+	Source          string                  `json:"source"`
+	Status          *string                 `json:"status"`
+	CreatedAt       *string                 `json:"created_at"`
+	UpdatedAt       *string                 `json:"updated_at"`
+	DurationSeconds *int64                  `json:"duration_seconds"`
+	Project         *string                 `json:"project"`
+	Path            string                  `json:"path"`
+	Models          []string                `json:"models"`
+	Turns           int                     `json:"turns"`
+	Messages        int                     `json:"messages"`
+	ToolCalls       int                     `json:"tool_calls"`
+	TokenUsage      inspectTokenUsageReport `json:"token_usage"`
 }
 
-func sourceForPath(path string) session.Source {
-	if strings.Contains(path, string(filepath.Separator)+".codex"+string(filepath.Separator)) ||
-		strings.Contains(filepath.Base(path), "rollout-") {
-		return "codex"
-	}
-	return "codex"
+type inspectTokenUsageReport struct {
+	InputTokens       int64 `json:"input_tokens"`
+	CachedInputTokens int64 `json:"cached_input_tokens"`
+	OutputTokens      int64 `json:"output_tokens"`
+	ReasoningTokens   int64 `json:"reasoning_tokens"`
+	TotalTokens       int64 `json:"total_tokens"`
 }
 
-func parserForSource(parsers []session.Parser, source session.Source) (session.Parser, error) {
-	for _, parser := range parsers {
-		if parser.Source() == source {
-			return parser, nil
-		}
+func newInspectReport(record session.Record) inspectReport {
+	report := inspectReport{
+		SessionID: record.SessionID,
+		Source:    string(record.Source),
+		Path:      record.Path,
+		Models:    record.Models,
+		Turns:     record.Turns,
+		Messages:  record.Messages,
+		ToolCalls: record.ToolCalls,
+		TokenUsage: inspectTokenUsageReport{
+			InputTokens:       record.TokenUsage.InputTokens,
+			CachedInputTokens: record.TokenUsage.CachedInputTokens,
+			OutputTokens:      record.TokenUsage.OutputTokens,
+			ReasoningTokens:   record.TokenUsage.ReasoningOutputTokens,
+			TotalTokens:       record.TokenUsage.TotalTokens,
+		},
 	}
-	return nil, fmt.Errorf("no parser registered for source %q", source)
+	if !record.CreatedAt.IsZero() {
+		created := formatTime(record.CreatedAt)
+		report.CreatedAt = &created
+	}
+	if !record.UpdatedAt.IsZero() {
+		updated := formatTime(record.UpdatedAt)
+		report.UpdatedAt = &updated
+	}
+	if !record.CreatedAt.IsZero() && !record.UpdatedAt.IsZero() && !record.UpdatedAt.Before(record.CreatedAt) {
+		duration := int64(record.UpdatedAt.Sub(record.CreatedAt).Seconds())
+		report.DurationSeconds = &duration
+	}
+	if record.CWD != "" {
+		report.Project = &record.CWD
+	}
+	return report
 }
 
 func summarizeRecords(records []session.Record) inspectSummary {
@@ -267,32 +255,61 @@ func printInspectSummary(w io.Writer, summary inspectSummary) error {
 	return printTokenUsage(w, summary.TokenUsage)
 }
 
-func printInspect(w io.Writer, record session.Record) error {
+func printInspectReport(w io.Writer, report inspectReport) error {
 	lines := []struct {
 		label string
 		value string
 	}{
-		{"Session", record.SessionID},
-		{"Source", string(record.Source)},
-		{"Created", formatTime(record.CreatedAt)},
-		{"Updated", formatTime(record.UpdatedAt)},
-		{"Path", record.Path},
-		{"CWD", record.CWD},
-		{"Models", strings.Join(record.Models, ", ")},
-		{"Provider", record.Provider},
-		{"CLI", record.CLIVersion},
-		{"Turns", formatCount(record.Turns)},
-		{"Messages", formatCount(record.Messages)},
-		{"Tool calls", formatCount(record.ToolCalls)},
+		{"Session", report.SessionID},
+		{"Source", report.Source},
+		{"Status", stringPtrValue(report.Status)},
+		{"Created", stringPtrValue(report.CreatedAt)},
+		{"Updated", stringPtrValue(report.UpdatedAt)},
+		{"Duration", formatDurationSeconds(report.DurationSeconds)},
+		{"Project", stringPtrValue(report.Project)},
+		{"Transcript", report.Path},
+		{"Models", strings.Join(report.Models, ", ")},
 	}
 
 	for _, line := range lines {
-		if _, err := fmt.Fprintf(w, "%-11s %s\n", line.label+":", fallback(line.value)); err != nil {
+		if _, err := fmt.Fprintf(w, "%-13s %s\n", line.label+":", fallback(line.value)); err != nil {
 			return err
 		}
 	}
 
-	return printTokenUsage(w, record.TokenUsage)
+	if _, err := fmt.Fprintln(w, "\nACTIVITY"); err != nil {
+		return err
+	}
+	activity := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	if _, err := fmt.Fprintln(activity, "Turns\tMessages\tTool calls"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(activity, "%s\t%s\t%s\n", formatNumber(int64(report.Turns)), formatNumber(int64(report.Messages)), formatNumber(int64(report.ToolCalls))); err != nil {
+		return err
+	}
+	if err := activity.Flush(); err != nil {
+		return err
+	}
+
+	if _, err := fmt.Fprintln(w, "\nTOKEN USAGE"); err != nil {
+		return err
+	}
+	tokens := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	if _, err := fmt.Fprintln(tokens, "Input\tCached input\tOutput\tReasoning\tTotal"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(
+		tokens,
+		"%s\t%s\t%s\t%s\t%s\n",
+		formatNumber(report.TokenUsage.InputTokens),
+		formatNumber(report.TokenUsage.CachedInputTokens),
+		formatNumber(report.TokenUsage.OutputTokens),
+		formatNumber(report.TokenUsage.ReasoningTokens),
+		formatNumber(report.TokenUsage.TotalTokens),
+	); err != nil {
+		return err
+	}
+	return tokens.Flush()
 }
 
 func printTokenUsage(w io.Writer, usage session.TokenUsage) error {
@@ -370,4 +387,62 @@ func fallback(value string) string {
 
 func formatCount(value int) string {
 	return fmt.Sprintf("%d", value)
+}
+
+func stringPtrValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func formatDurationSeconds(seconds *int64) string {
+	if seconds == nil {
+		return ""
+	}
+	if *seconds == 0 {
+		return "0s"
+	}
+	remaining := *seconds
+	hours := remaining / 3600
+	remaining %= 3600
+	minutes := remaining / 60
+	remaining %= 60
+
+	var parts []string
+	if hours > 0 {
+		parts = append(parts, fmt.Sprintf("%dh", hours))
+	}
+	if minutes > 0 {
+		parts = append(parts, fmt.Sprintf("%dm", minutes))
+	}
+	if remaining > 0 {
+		parts = append(parts, fmt.Sprintf("%ds", remaining))
+	}
+	return strings.Join(parts, " ")
+}
+
+func formatNumber(value int64) string {
+	sign := ""
+	if value < 0 {
+		sign = "-"
+		value = -value
+	}
+	digits := strconv.FormatInt(value, 10)
+	if len(digits) <= 3 {
+		return sign + digits
+	}
+
+	var b strings.Builder
+	b.WriteString(sign)
+	head := len(digits) % 3
+	if head == 0 {
+		head = 3
+	}
+	b.WriteString(digits[:head])
+	for i := head; i < len(digits); i += 3 {
+		b.WriteByte(',')
+		b.WriteString(digits[i : i+3])
+	}
+	return b.String()
 }

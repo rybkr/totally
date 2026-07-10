@@ -17,6 +17,8 @@ func TestParserParseSession(t *testing.T) {
 	path := writeRolloutJSONL(t, rolloutFixture())
 	created := time.Date(2026, 7, 8, 20, 20, 44, 0, time.UTC)
 	updated := time.Date(2026, 7, 9, 8, 0, 0, 0, time.UTC)
+	wantCreated := time.Date(2026, 7, 9, 3, 20, 44, 0, time.UTC)
+	wantUpdated := time.Date(2026, 7, 9, 3, 20, 50, 0, time.UTC)
 
 	record, err := NewParser().ParseSession(context.Background(), session.FileRef{
 		Source:    Source,
@@ -38,8 +40,11 @@ func TestParserParseSession(t *testing.T) {
 	if record.SessionID != "019f44e4-5c01-7d22-9805-50cecaefde49" {
 		t.Fatalf("unexpected session ID: %s", record.SessionID)
 	}
-	if record.Path != path || record.CreatedAt != created || record.UpdatedAt != updated || record.SizeBytes != 123 {
+	if record.Path != path || record.SizeBytes != 123 {
 		t.Fatalf("file metadata was not preserved: %+v", record)
+	}
+	if !record.CreatedAt.Equal(wantCreated) || !record.UpdatedAt.Equal(wantUpdated) {
+		t.Fatalf("unexpected transcript timestamps: created=%s updated=%s", record.CreatedAt, record.UpdatedAt)
 	}
 	if record.CWD != "/tmp/project" {
 		t.Fatalf("unexpected cwd: %s", record.CWD)
