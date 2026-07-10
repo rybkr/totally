@@ -13,12 +13,15 @@ go run ./cmd/totally inspect --help
 ## Commands
 
 ```sh
-totally [global flags] files [--limit N] [--latest]
+totally [global flags] files [--limit N] [--latest] [--summary | --count | --paths]
 totally [global flags] inspect [session-id-or-path | --latest]
 ```
 
 `files` discovers local session transcript files and prints them as a table by
-default. Use `--latest` to print only the most recently updated session file.
+default. Use `--latest` to sort by most recently updated and print one file by
+default; combine it with `--limit N` to print the latest N files.
+Use `--summary` for storage and discovery totals, `--count` for a bare file
+count, or `--paths` for newline-delimited file paths.
 
 `inspect` parses session transcripts and prints a terminal-friendly usage
 summary with metadata, models used, message/tool counts, and token usage. With
@@ -85,7 +88,12 @@ TOTALLY_FORMAT=json
 totally files
 totally files --limit 10
 totally files --latest
+totally files --latest --limit 2
+totally files --summary
+totally files --count
+totally files --paths
 totally --format json files
+totally --format json files --summary
 totally --agent codex --since 7d files
 totally --home ~/.codex --archived files
 totally inspect

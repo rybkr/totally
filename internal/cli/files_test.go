@@ -29,11 +29,120 @@ func TestFilesCommandPrintsDiscoveredFiles(t *testing.T) {
 	}
 
 	output := stdout.String()
-	if !strings.Contains(output, "SOURCE\tFORMAT\tSESSION\tCREATED\tUPDATED\tSIZE\tPATH") {
+	if !strings.Contains(output, "SOURCE\tROLE\tFORMAT\tSESSION\tCREATED\tUPDATED\tSIZE\tPATH") {
 		t.Fatalf("missing header in output:\n%s", output)
 	}
 	if !strings.Contains(output, path) {
 		t.Fatalf("missing rollout path in output:\n%s", output)
+	}
+}
+
+func TestFilesCommandPrintsPaths(t *testing.T) {
+	root := t.TempDir()
+	path := writeRollout(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"files", "--home", root, "--paths"})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	if got := strings.TrimSpace(stdout.String()); got != path {
+		t.Fatalf("expected path output %q, got %q", path, got)
+	}
+}
+
+func TestFilesCommandPrintsCount(t *testing.T) {
+	root := t.TempDir()
+	writeRollout(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl")
+	writeRollout(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde50.jsonl")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"files", "--home", root, "--count"})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	if got := strings.TrimSpace(stdout.String()); got != "2" {
+		t.Fatalf("expected count 2, got %q", got)
+	}
+}
+
+func TestFilesCommandPrintsSummary(t *testing.T) {
+	root := t.TempDir()
+	active := writeRollout(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl")
+	archived := writeRollout(t, root, "archived_sessions/2026/07/09/rollout-2026-07-09T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde50.jsonl.zst")
+	setFileTimes(t, active, time.Date(2026, 7, 8, 20, 30, 0, 0, time.UTC))
+	setFileTimes(t, archived, time.Date(2026, 7, 10, 20, 30, 0, 0, time.UTC))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"files", "--home", root, "--archived", "--summary"})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	output := stdout.String()
+	for _, want := range []string{
+		"Homes:      " + root,
+		"Files:      2",
+		"Active:     1",
+		"Archived:   1",
+		"Compressed: 1",
+		"Earliest:   2026-07-09T03:20:44Z",
+		"Latest:     2026-07-10T20:30:00Z",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("missing %q in summary:\n%s", want, output)
+		}
+	}
+}
+
+func TestFilesCommandPrintsSummaryJSON(t *testing.T) {
+	root := t.TempDir()
+	writeRollout(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"files", "--home", root, "--summary", "--format", "json"})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	var summary filesSummary
+	if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil {
+		t.Fatalf("invalid JSON output: %v\n%s", err, stdout.String())
+	}
+	if summary.Files != 1 || summary.Active != 1 || summary.Archived != 0 {
+		t.Fatalf("unexpected summary: %+v", summary)
+	}
+	if len(summary.Homes) != 1 || summary.Homes[0] != root {
+		t.Fatalf("unexpected homes: %+v", summary.Homes)
+	}
+}
+
+func TestFilesCommandRejectsMultiplePlainOutputModes(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"files", "--count", "--paths"})
+
+	err := cmd.ExecuteContext(context.Background())
+	if err == nil {
+		t.Fatal("expected multiple output modes to fail")
+	}
+	if !strings.Contains(err.Error(), "--summary, --count, and --paths are mutually exclusive") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -150,6 +259,59 @@ func TestFilesCommandLatestUsesUpdatedTime(t *testing.T) {
 	}
 	if files[0].SessionID != "019f44e4-5c01-7d22-9805-50cecaefde50" {
 		t.Fatalf("expected updated-newer session, got %+v", files[0])
+	}
+}
+
+func TestFilesCommandLatestLimitPrintsLatestFiles(t *testing.T) {
+	root := t.TempDir()
+	oldest := writeRollout(t, root, "sessions/2026/07/07/rollout-2026-07-07T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl")
+	latest := writeRollout(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde50.jsonl")
+	secondLatest := writeRollout(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde51.jsonl")
+	setFileTimes(t, oldest, time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC))
+	setFileTimes(t, secondLatest, time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC))
+	setFileTimes(t, latest, time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"files", "--home", root, "--latest", "--limit", "2", "--format", "json"})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	var files []session.FileRef
+	if err := json.Unmarshal(stdout.Bytes(), &files); err != nil {
+		t.Fatalf("invalid JSON output: %v\n%s", err, stdout.String())
+	}
+	if len(files) != 2 {
+		t.Fatalf("expected 2 latest files, got %d", len(files))
+	}
+	if files[0].SessionID != "019f44e4-5c01-7d22-9805-50cecaefde50" {
+		t.Fatalf("expected latest session first, got %+v", files[0])
+	}
+	if files[1].SessionID != "019f44e4-5c01-7d22-9805-50cecaefde51" {
+		t.Fatalf("expected second latest session second, got %+v", files[1])
+	}
+}
+
+func TestFilesCommandLatestLimitAppliesBeforeCount(t *testing.T) {
+	root := t.TempDir()
+	writeRollout(t, root, "sessions/2026/07/07/rollout-2026-07-07T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl")
+	writeRollout(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde50.jsonl")
+	writeRollout(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde51.jsonl")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"files", "--home", root, "--latest", "--limit", "2", "--count"})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	if got := strings.TrimSpace(stdout.String()); got != "2" {
+		t.Fatalf("expected count 2, got %q", got)
 	}
 }
 
