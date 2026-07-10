@@ -114,20 +114,7 @@ func parseDiscoveredSessions(cmd *cobra.Command, globals globalOptions, parsers 
 		return nil, err
 	}
 	sortFilesByCreated(files)
-
-	records := make([]session.Record, 0, len(files))
-	for _, file := range files {
-		parser, err := parserForSource(parsers, file.Source)
-		if err != nil {
-			return nil, err
-		}
-		record, err := parser.ParseSession(cmd.Context(), file)
-		if err != nil {
-			return nil, fmt.Errorf("parse %s: %w", file.Path, err)
-		}
-		records = append(records, record)
-	}
-	return records, nil
+	return parseSessionFilesWithParsers(cmd, parsers, files)
 }
 
 func resolveInspectTarget(cmd *cobra.Command, globals globalOptions, opts inspectOptions, args []string) (session.FileRef, error) {

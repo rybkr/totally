@@ -7,6 +7,7 @@
 ```sh
 go run ./cmd/totally --help
 go run ./cmd/totally files --help
+go run ./cmd/totally sessions --help
 go run ./cmd/totally inspect --help
 ```
 
@@ -14,6 +15,7 @@ go run ./cmd/totally inspect --help
 
 ```sh
 totally [global flags] files [--limit N] [--latest] [--summary | --count | --paths]
+totally [global flags] sessions [--limit N] [--latest] [--summary | --ids | --paths]
 totally [global flags] inspect [session-id-or-path | --latest]
 ```
 
@@ -22,6 +24,13 @@ default. Use `--latest` to sort by most recently updated and print one file by
 default; combine it with `--limit N` to print the latest N files.
 Use `--summary` for storage and discovery totals, `--count` for a bare file
 count, or `--paths` for newline-delimited file paths.
+
+`sessions` parses discovered transcripts and prints one row per logical session
+with metadata, models, turn/message/tool counts, and token totals. Use
+`--latest` to sort by most recently updated and print one session by default;
+combine it with `--limit N` to print the latest N sessions. Use `--summary` for
+aggregate session totals, `--ids` for newline-delimited session IDs, or
+`--paths` for backing transcript paths.
 
 `inspect` parses session transcripts and prints a terminal-friendly usage
 summary with metadata, models used, message/tool counts, and token usage. With
@@ -96,6 +105,14 @@ totally --format json files
 totally --format json files --summary
 totally --agent codex --since 7d files
 totally --home ~/.codex --archived files
+totally sessions
+totally sessions --latest
+totally sessions --latest --limit 5
+totally sessions --summary
+totally sessions --ids
+totally sessions --paths
+totally --format json sessions
+totally --format json sessions --summary
 totally inspect
 totally --since 7d inspect
 totally inspect --latest

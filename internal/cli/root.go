@@ -26,5 +26,6 @@ func NewRootCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 	addGlobalFlags(cmd, &opts)
 	cmd.AddCommand(newFilesCommand(stdout, &opts))
 	cmd.AddCommand(newInspectCommand(stdout, &opts))
+	cmd.AddCommand(newSessionsCommand(stdout, &opts))
 	return cmd
 }
