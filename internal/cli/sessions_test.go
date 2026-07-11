@@ -27,11 +27,35 @@ func TestSessionsCommandPrintsTable(t *testing.T) {
 	output := stdout.String()
 	for _, want := range []string{
 		"SESSION ID\tCWD\tPROMPT",
-		"019f44e4-5c01-7d22-9805-50cecaefde49\t/tmp/project\tExplain this session",
+		"019f44e4\t/tmp/project\tExplain this session",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("missing %q in output:\n%s", want, output)
 		}
+	}
+}
+
+func TestSessionsCommandFullPrintsFullSessionID(t *testing.T) {
+	root := t.TempDir()
+	sessionID := "019f44e4-5c01-7d22-9805-50cecaefde49"
+	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+sessionID+".jsonl", inspectFixtureForSession(sessionID))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"sessions", "--home", root, "--full"})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\\nstderr: %s", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), sessionID+"\t/tmp/project\tExplain this session") {
+		t.Fatalf("expected full session ID in output:\\n%s", stdout.String())
+	}
+}
+
+func TestFormatSessionIDTruncatesToPrefix(t *testing.T) {
+	if got := formatSessionID("019f44e4-5c01-7d22-9805-50cecaefde49"); got != "019f44e4" {
+		t.Fatalf("formatSessionID() = %q, want UUID prefix", got)
 	}
 }
 

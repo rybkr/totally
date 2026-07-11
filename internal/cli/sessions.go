@@ -22,6 +22,7 @@ type sessionsOptions struct {
 	summary bool
 	ids     bool
 	paths   bool
+	full    bool
 }
 
 func newSessionsCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
@@ -41,6 +42,7 @@ func newSessionsCommand(stdout io.Writer, globals *globalOptions) *cobra.Command
 	cmd.Flags().BoolVar(&opts.summary, "summary", false, "print an aggregate session summary")
 	cmd.Flags().BoolVar(&opts.ids, "ids", false, "print only session IDs")
 	cmd.Flags().BoolVar(&opts.paths, "paths", false, "print only backing transcript paths")
+	cmd.Flags().BoolVar(&opts.full, "full", false, "do not truncate display values in table output")
 
 	return cmd
 }
@@ -95,12 +97,12 @@ func runSessions(cmd *cobra.Command, stdout io.Writer, globals globalOptions, op
 	case outputFormatTable:
 		if shouldPageTable(stdout, globals.noPager) {
 			var table bytes.Buffer
-			if err := printSessionsTable(&table, records); err != nil {
+			if err := printSessionsTable(&table, records, opts.full); err != nil {
 				return err
 			}
 			return pageTableOutput(cmd, stdout, table.Bytes())
 		}
-		return printSessionsTable(stdout, records)
+		return printSessionsTable(stdout, records, opts.full)
 	case outputFormatJSON:
 		return json.NewEncoder(stdout).Encode(records)
 	default:
@@ -184,18 +186,24 @@ func parseSessionFilesWithParsers(cmd *cobra.Command, parsers []session.Parser, 
 	return records, nil
 }
 
-func printSessionsTable(w io.Writer, records []session.Record) error {
+func printSessionsTable(w io.Writer, records []session.Record, full bool) error {
 	if _, err := fmt.Fprintln(w, "SESSION ID\tCWD\tPROMPT"); err != nil {
 		return err
 	}
 	home, _ := os.UserHomeDir()
 	for _, record := range records {
+		sessionID := formatSessionID(record.SessionID)
+		prompt := formatSessionPrompt(record.FirstPrompt)
+		if full {
+			sessionID = record.SessionID
+			prompt = record.FirstPrompt
+		}
 		if _, err := fmt.Fprintf(
 			w,
 			"%s\t%s\t%s\n",
-			record.SessionID,
+			sessionID,
 			shortenSessionCWD(record.CWD, home),
-			formatSessionPrompt(record.FirstPrompt),
+			prompt,
 		); err != nil {
 			return err
 		}
@@ -203,7 +211,18 @@ func printSessionsTable(w io.Writer, records []session.Record) error {
 	return nil
 }
 
-const sessionPromptMaxRunes = 80
+const (
+	sessionIDPrefixRunes  = 8
+	sessionPromptMaxRunes = 80
+)
+
+func formatSessionID(sessionID string) string {
+	runes := []rune(sessionID)
+	if len(runes) <= sessionIDPrefixRunes {
+		return sessionID
+	}
+	return string(runes[:sessionIDPrefixRunes])
+}
 
 func shortenSessionCWD(cwd string, home string) string {
 	if cwd == "" || home == "" {

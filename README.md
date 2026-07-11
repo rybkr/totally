@@ -58,6 +58,7 @@ totally sessions
 totally sessions --project totally --since 7d
 totally sessions --prompt "command set"
 totally sessions --model gpt-5 --sort cost --limit 10
+totally sessions --full
 ```
 
 Session-specific options:
@@ -66,6 +67,7 @@ Session-specific options:
 --prompt TEXT                   Match the first prompt/task descriptor
 --sort started|updated|cost|tokens|duration
 --latest                        Select the most recently updated session
+--full                          Do not truncate display values in table output
 ```
 
 ## Show a session
