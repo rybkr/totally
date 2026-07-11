@@ -34,7 +34,7 @@ func TestShowCommandPrintsSingleSessionReport(t *testing.T) {
 		"Time        2026-07-09T03:20:44Z -> 2026-07-09T03:20:48Z (4s)",
 		"Activity    2 turns, 1 messages, 1 tool calls",
 		"Tokens      125 total; 100 input (40 cached); 25 output (incl. 5 reasoning)",
-		"Cost        $0.00 USD",
+		"Cost        $0.000066 USD estimated (API-equivalent)",
 		"Transcript  " + path,
 	} {
 		if !strings.Contains(output, want) {
@@ -142,7 +142,7 @@ func TestShowCommandPrintsJSONReport(t *testing.T) {
 	if report.FirstPrompt == nil || *report.FirstPrompt != "Explain this session" {
 		t.Fatalf("unexpected first prompt: %+v", report.FirstPrompt)
 	}
-	if report.CostUSD != 0 {
+	if report.CostUSD != 0.000066 {
 		t.Fatalf("unexpected cost: %v", report.CostUSD)
 	}
 	if len(report.Models) != 2 || report.Models[0] != "gpt-5" || report.Models[1] != "gpt-5-mini" {
@@ -340,7 +340,7 @@ func inspectFixtureForSessionAt(sessionID string, start time.Time) string {
 	return `{"timestamp":"` + start.Format(time.RFC3339) + `","type":"session_meta","payload":{"session_id":"` + sessionID + `","cwd":"/tmp/project","cli_version":"0.142.5","model_provider":"openai"}}
 {"timestamp":"` + start.Add(time.Second).Format(time.RFC3339) + `","type":"turn_context","payload":{"cwd":"/tmp/project","model":"gpt-5"}}
 {"timestamp":"` + start.Add(time.Second).Format(time.RFC3339) + `","type":"turn_context","payload":{"cwd":"/tmp/project","model":"gpt-5-mini"}}
-{"timestamp":"` + start.Add(2*time.Second).Format(time.RFC3339) + `","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":25,"reasoning_output_tokens":5,"total_tokens":125}}}}
+{"timestamp":"` + start.Add(2*time.Second).Format(time.RFC3339) + `","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":25,"reasoning_output_tokens":5,"total_tokens":125},"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":25,"reasoning_output_tokens":5,"total_tokens":125}}}}
 {"timestamp":"` + start.Add(3*time.Second).Format(time.RFC3339) + `","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Explain this session"}]}}
 {"timestamp":"` + start.Add(4*time.Second).Format(time.RFC3339) + `","type":"response_item","payload":{"type":"function_call","name":"exec_command"}}
 `

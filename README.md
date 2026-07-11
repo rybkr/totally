@@ -110,9 +110,28 @@ totally prices --format json
 ```
 
 Pricing output shows the configured rates per million tokens for input, cached
-input, output, and reasoning, plus the source and effective date/version.
+input, and output, plus the source and effective date/version.
 Costs are estimates based on this local price table, not vendor invoice
 reconciliation.
+
+Built-in prices can be replaced in the Totally TOML configuration. Override
+keys use `provider/model`, and monetary values are decimal strings:
+
+```toml
+[prices."openai/gpt-5"]
+input_per_million_usd = "1.25"
+cached_input_per_million_usd = "0.125"
+output_per_million_usd = "10.00"
+effective_from = "2025-08-07"
+source = "user"
+```
+
+Session costs use the API-equivalent basis. Cached input is excluded from
+regular input before applying its lower rate, and reasoning tokens are not
+charged separately because they are included in output tokens. If usage cannot
+be attributed to a priced model, `show` reports the estimate as unavailable or
+partial rather than treating it as zero. JSON includes the structured `cost`
+object and retains `cost_usd` as a compatibility field.
 
 ## Raw files
 

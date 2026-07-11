@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rybkr/totally/internal/pricing"
 	"github.com/rybkr/totally/internal/provider/codex"
 	"github.com/rybkr/totally/internal/session"
 	"github.com/spf13/cobra"
@@ -51,6 +52,7 @@ type globalOptions struct {
 	until    string
 	format   string
 	noPager  bool
+	prices   pricing.Catalog
 }
 
 type timeRange struct {
@@ -109,6 +111,21 @@ func loadGlobalOptions(cmd *cobra.Command, opts *globalOptions) error {
 	opts.since = v.GetString("since")
 	opts.until = v.GetString("until")
 	opts.format = strings.TrimSpace(strings.ToLower(v.GetString("format")))
+	opts.prices = pricing.DefaultCatalog()
+	var overrides map[string]pricing.Rate
+	if err := v.UnmarshalKey("prices", &overrides); err != nil {
+		return fmt.Errorf("decode prices: %w", err)
+	}
+	for key, rate := range overrides {
+		parts := strings.SplitN(key, "/", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid price key %q: expected provider/model", key)
+		}
+		rate.Provider, rate.Model = parts[0], parts[1]
+		if err := opts.prices.Override(rate); err != nil {
+			return err
+		}
+	}
 	if err := validateOutputFormat(opts.format); err != nil {
 		return err
 	}

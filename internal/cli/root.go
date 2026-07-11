@@ -28,5 +28,6 @@ func NewRootCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 	cmd.AddCommand(newFilesCommand(stdout, &opts))
 	cmd.AddCommand(newShowCommand(stdout, &opts))
 	cmd.AddCommand(newSessionsCommand(stdout, &opts))
+	cmd.AddCommand(newPricesCommand(stdout, &opts))
 	return cmd
 }

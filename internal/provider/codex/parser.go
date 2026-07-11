@@ -18,6 +18,10 @@ import (
 // Parser reads Codex rollout transcript files.
 type Parser struct{}
 
+type parseState struct {
+	activeModel string
+}
+
 func NewParser() Parser {
 	return Parser{}
 }
@@ -50,6 +54,7 @@ func (Parser) ParseSession(ctx context.Context, file session.FileRef) (session.R
 	lineReader := bufio.NewReader(reader)
 	sawTimestamp := false
 	lineNumber := 0
+	state := parseState{}
 
 	for {
 		line, err := lineReader.ReadBytes('\n')
@@ -64,7 +69,7 @@ func (Parser) ParseSession(ctx context.Context, file session.FileRef) (session.R
 			return session.Record{}, err
 		}
 		if len(bytes.TrimSpace(line)) > 0 {
-			if err := applyRolloutLine(line, &record, &sawTimestamp); err != nil {
+			if err := applyRolloutLine(line, &record, &state, &sawTimestamp); err != nil {
 				return session.Record{}, fmt.Errorf("parse rollout line %d: %w", lineNumber, err)
 			}
 		}
@@ -101,7 +106,7 @@ func openRollout(file session.FileRef) (io.Reader, func(), error) {
 	}
 }
 
-func applyRolloutLine(line []byte, record *session.Record, sawTimestamp *bool) error {
+func applyRolloutLine(line []byte, record *session.Record, state *parseState, sawTimestamp *bool) error {
 	var envelope struct {
 		Timestamp time.Time       `json:"timestamp"`
 		Type      string          `json:"type"`
@@ -123,9 +128,9 @@ func applyRolloutLine(line []byte, record *session.Record, sawTimestamp *bool) e
 		return applySessionMeta(envelope.Payload, record)
 	case "turn_context":
 		record.Turns++
-		return applyTurnContext(envelope.Payload, record)
+		return applyTurnContext(envelope.Payload, record, state)
 	case "event_msg":
-		return applyEventMsg(envelope.Payload, record)
+		return applyEventMsg(envelope.Payload, record, state)
 	case "response_item":
 		return applyResponseItem(envelope.Payload, record)
 	default:
@@ -156,7 +161,7 @@ func applySessionMeta(payload json.RawMessage, record *session.Record) error {
 	return nil
 }
 
-func applyTurnContext(payload json.RawMessage, record *session.Record) error {
+func applyTurnContext(payload json.RawMessage, record *session.Record, state *parseState) error {
 	var turn struct {
 		Model string `json:"model"`
 		CWD   string `json:"cwd"`
@@ -166,6 +171,9 @@ func applyTurnContext(payload json.RawMessage, record *session.Record) error {
 	}
 
 	addModel(record, turn.Model)
+	if turn.Model != "" {
+		state.activeModel = turn.Model
+	}
 	if record.CWD == "" {
 		record.CWD = turn.CWD
 	}
@@ -184,11 +192,12 @@ func addModel(record *session.Record, model string) {
 	record.Models = append(record.Models, model)
 }
 
-func applyEventMsg(payload json.RawMessage, record *session.Record) error {
+func applyEventMsg(payload json.RawMessage, record *session.Record, state *parseState) error {
 	var event struct {
 		Type string `json:"type"`
 		Info *struct {
 			TotalTokenUsage codexTokenUsage `json:"total_token_usage"`
+			LastTokenUsage  codexTokenUsage `json:"last_token_usage"`
 		} `json:"info"`
 	}
 	if err := json.Unmarshal(payload, &event); err != nil {
@@ -199,9 +208,32 @@ func applyEventMsg(payload json.RawMessage, record *session.Record) error {
 	case "token_count":
 		if event.Info != nil {
 			record.TokenUsage = event.Info.TotalTokenUsage.toSessionUsage()
+			addUsageSegment(record, record.Provider, state.activeModel, event.Info.LastTokenUsage.toSessionUsage())
 		}
 	}
 	return nil
+}
+
+func addUsageSegment(record *session.Record, provider, model string, usage session.TokenUsage) {
+	if model == "" || usage == (session.TokenUsage{}) {
+		return
+	}
+	for i := range record.UsageSegments {
+		segment := &record.UsageSegments[i]
+		if segment.Provider == provider && segment.Model == model {
+			addTokenUsage(&segment.TokenUsage, usage)
+			return
+		}
+	}
+	record.UsageSegments = append(record.UsageSegments, session.UsageSegment{Provider: provider, Model: model, TokenUsage: usage})
+}
+
+func addTokenUsage(total *session.TokenUsage, usage session.TokenUsage) {
+	total.InputTokens += usage.InputTokens
+	total.CachedInputTokens += usage.CachedInputTokens
+	total.OutputTokens += usage.OutputTokens
+	total.ReasoningOutputTokens += usage.ReasoningOutputTokens
+	total.TotalTokens += usage.TotalTokens
 }
 
 func applyResponseItem(payload json.RawMessage, record *session.Record) error {

@@ -33,6 +33,14 @@ type Record struct {
 	Messages  int `json:"messages"`
 	ToolCalls int `json:"tool_calls"`
 
+	TokenUsage    TokenUsage     `json:"token_usage"`
+	UsageSegments []UsageSegment `json:"usage_segments"`
+}
+
+// UsageSegment attributes incremental token usage to one provider and model.
+type UsageSegment struct {
+	Provider   string     `json:"provider"`
+	Model      string     `json:"model"`
 	TokenUsage TokenUsage `json:"token_usage"`
 }
 

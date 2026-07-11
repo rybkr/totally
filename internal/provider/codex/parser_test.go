@@ -83,6 +83,34 @@ func TestParserParseSession(t *testing.T) {
 	if record.TokenUsage != wantUsage {
 		t.Fatalf("unexpected token usage: %+v", record.TokenUsage)
 	}
+	if len(record.UsageSegments) != 1 || record.UsageSegments[0].Model != "gpt-5" || record.UsageSegments[0].TokenUsage != wantUsage {
+		t.Fatalf("unexpected usage segments: %+v", record.UsageSegments)
+	}
+}
+
+func TestParserAttributesIncrementalUsageAcrossModels(t *testing.T) {
+	path := writeRolloutJSONL(t, `{"timestamp":"2026-07-09T03:20:44Z","type":"session_meta","payload":{"model_provider":"openai"}}
+{"timestamp":"2026-07-09T03:20:45Z","type":"turn_context","payload":{"model":"gpt-5"}}
+{"timestamp":"2026-07-09T03:20:46Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12},"last_token_usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}}
+{"timestamp":"2026-07-09T03:20:47Z","type":"turn_context","payload":{"model":"gpt-5-mini"}}
+{"timestamp":"2026-07-09T03:20:48Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":30,"cached_input_tokens":5,"output_tokens":6,"total_tokens":36},"last_token_usage":{"input_tokens":20,"cached_input_tokens":5,"output_tokens":4,"total_tokens":24}}}}
+`)
+	record, err := NewParser().ParseSession(context.Background(), session.FileRef{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(record.UsageSegments) != 2 {
+		t.Fatalf("unexpected segments: %+v", record.UsageSegments)
+	}
+	if record.UsageSegments[0].Model != "gpt-5" || record.UsageSegments[0].TokenUsage.TotalTokens != 12 {
+		t.Fatalf("unexpected first segment: %+v", record.UsageSegments[0])
+	}
+	if record.UsageSegments[1].Model != "gpt-5-mini" || record.UsageSegments[1].TokenUsage.TotalTokens != 24 {
+		t.Fatalf("unexpected second segment: %+v", record.UsageSegments[1])
+	}
+	if record.TokenUsage.TotalTokens != 36 {
+		t.Fatalf("unexpected aggregate: %+v", record.TokenUsage)
+	}
 }
 
 func TestParserParseCompressedSession(t *testing.T) {

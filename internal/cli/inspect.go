@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rybkr/totally/internal/pricing"
 	"github.com/rybkr/totally/internal/session"
 	"github.com/spf13/cobra"
 )
@@ -102,7 +103,7 @@ func runShow(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts s
 		}
 	}
 
-	report := newShowReport(record)
+	report := newShowReport(record, globals.prices)
 	switch globals.format {
 	case outputFormatTable:
 		return printShowReport(stdout, report)
@@ -187,6 +188,7 @@ type showReport struct {
 	ToolCalls       int                  `json:"tool_calls"`
 	TokenUsage      showTokenUsageReport `json:"token_usage"`
 	CostUSD         float64              `json:"cost_usd"`
+	Cost            pricing.Estimate     `json:"cost"`
 }
 
 type showTokenUsageReport struct {
@@ -197,7 +199,8 @@ type showTokenUsageReport struct {
 	TotalTokens       int64 `json:"total_tokens"`
 }
 
-func newShowReport(record session.Record) showReport {
+func newShowReport(record session.Record, catalog pricing.Catalog) showReport {
+	estimate := catalog.Estimate(record.UsageSegments, record.CreatedAt)
 	report := showReport{
 		SessionID: record.SessionID,
 		Source:    string(record.Source),
@@ -206,6 +209,8 @@ func newShowReport(record session.Record) showReport {
 		Turns:     record.Turns,
 		Messages:  record.Messages,
 		ToolCalls: record.ToolCalls,
+		Cost:      estimate,
+		CostUSD:   pricing.FloatAmount(estimate),
 		TokenUsage: showTokenUsageReport{
 			InputTokens:       record.TokenUsage.InputTokens,
 			CachedInputTokens: record.TokenUsage.CachedInputTokens,
@@ -320,7 +325,7 @@ func printShowReport(w io.Writer, report showReport) error {
 		struct{ label, value string }{"Time", formatShowTime(report)},
 		struct{ label, value string }{"Activity", fmt.Sprintf("%s turns, %s messages, %s tool calls", formatNumber(int64(report.Turns)), formatNumber(int64(report.Messages)), formatNumber(int64(report.ToolCalls)))},
 		struct{ label, value string }{"Tokens", formatShowTokenUsage(report.TokenUsage)},
-		struct{ label, value string }{"Cost", formatCostUSD(report.CostUSD)},
+		struct{ label, value string }{"Cost", formatCostEstimate(report.Cost)},
 		struct{ label, value string }{"Transcript", report.Path},
 	)
 
@@ -332,8 +337,18 @@ func printShowReport(w io.Writer, report showReport) error {
 	return nil
 }
 
-func formatCostUSD(cost float64) string {
-	return fmt.Sprintf("$%.2f USD", cost)
+func formatCostEstimate(cost pricing.Estimate) string {
+	if cost.AmountUSD == nil {
+		if len(cost.Missing) > 0 {
+			return fmt.Sprintf("unavailable (no price for %s/%s)", cost.Missing[0].Provider, cost.Missing[0].Model)
+		}
+		return "unavailable (token usage is not attributed to a model)"
+	}
+	value := "$" + *cost.AmountUSD + " USD estimated (API-equivalent)"
+	if cost.Status == "partial" {
+		value += "; partial"
+	}
+	return value
 }
 
 func formatShowTime(report showReport) string {
