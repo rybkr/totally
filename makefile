@@ -86,6 +86,12 @@ format:
 		echo "goimports not found; gofmt completed"; \
 	fi
 
+##@Lint
+## lint: Lint Go source
+lint:
+	@echo "Vetting Go files with go vet..."
+	@go vet ./...
+
 ##@ Test
 ## test: Run all Go tests
 test:
