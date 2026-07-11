@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -111,6 +112,14 @@ func TestParserRejectsOtherSources(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected source mismatch to fail")
+	}
+}
+
+func TestParserReportsMalformedJSONLLine(t *testing.T) {
+	path := writeRolloutJSONL(t, "not json\n")
+	_, err := NewParser().ParseSession(context.Background(), session.FileRef{Path: path})
+	if err == nil || !strings.Contains(err.Error(), "parse rollout line 1:") {
+		t.Fatalf("expected line-specific parse error, got %v", err)
 	}
 }
 

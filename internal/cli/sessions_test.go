@@ -91,6 +91,34 @@ func TestSessionsCommandPrintsJSON(t *testing.T) {
 	}
 }
 
+func TestSessionsCommandSkipsMalformedTranscript(t *testing.T) {
+	root := t.TempDir()
+	validID := "019f44e4-5c01-7d22-9805-50cecaefde49"
+	badID := "019f44e4-5c01-7d22-9805-50cecaefde50"
+	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+validID+".jsonl", inspectFixtureForSession(validID))
+	badPath := writeRolloutContents(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-"+badID+".jsonl", "not json\n")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"--format", "json", "sessions", "--home", root})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	var records []session.Record
+	if err := json.Unmarshal(stdout.Bytes(), &records); err != nil {
+		t.Fatalf("invalid JSON output: %v\n%s", err, stdout.String())
+	}
+	if len(records) != 1 || records[0].SessionID != validID {
+		t.Fatalf("unexpected records: %+v", records)
+	}
+	if !strings.Contains(stderr.String(), "warning: skip session transcript "+badPath+": parse rollout line 1:") {
+		t.Fatalf("missing transcript warning:\n%s", stderr.String())
+	}
+}
+
 func TestSessionsCommandPrintsIDs(t *testing.T) {
 	root := t.TempDir()
 	firstID := "019f44e4-5c01-7d22-9805-50cecaefde49"

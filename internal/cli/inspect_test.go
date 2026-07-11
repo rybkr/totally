@@ -63,6 +63,29 @@ func TestShowCommandPrintsMostRecentlyUpdatedSession(t *testing.T) {
 	}
 }
 
+func TestShowLatestSkipsMalformedTranscript(t *testing.T) {
+	root := t.TempDir()
+	validID := "019f44e4-5c01-7d22-9805-50cecaefde49"
+	badID := "019f44e4-5c01-7d22-9805-50cecaefde50"
+	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+validID+".jsonl", inspectFixtureForSession(validID))
+	badPath := writeRolloutContents(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-"+badID+".jsonl", "not json\n")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"show", "--home", root, "--latest"})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Session     "+validID) {
+		t.Fatalf("expected valid session %q, got:\n%s", validID, stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "warning: skip session transcript "+badPath+": parse rollout line 1:") {
+		t.Fatalf("missing transcript warning:\n%s", stderr.String())
+	}
+}
+
 func TestShowCommandPrintsJSONReport(t *testing.T) {
 	root := t.TempDir()
 	sessionID := "019f44e4-5c01-7d22-9805-50cecaefde49"

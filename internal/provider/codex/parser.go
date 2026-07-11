@@ -49,21 +49,23 @@ func (Parser) ParseSession(ctx context.Context, file session.FileRef) (session.R
 
 	lineReader := bufio.NewReader(reader)
 	sawTimestamp := false
+	lineNumber := 0
 
 	for {
 		line, err := lineReader.ReadBytes('\n')
+		lineNumber++
 		if len(bytes.TrimSpace(line)) == 0 && err == io.EOF {
 			break
 		}
 		if err != nil && err != io.EOF {
-			return session.Record{}, err
+			return session.Record{}, fmt.Errorf("read rollout line %d: %w", lineNumber, err)
 		}
 		if err := ctx.Err(); err != nil {
 			return session.Record{}, err
 		}
 		if len(bytes.TrimSpace(line)) > 0 {
 			if err := applyRolloutLine(line, &record, &sawTimestamp); err != nil {
-				return session.Record{}, err
+				return session.Record{}, fmt.Errorf("parse rollout line %d: %w", lineNumber, err)
 			}
 		}
 		if err == io.EOF {

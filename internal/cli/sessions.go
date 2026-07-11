@@ -172,7 +172,12 @@ func parseSessionFilesWithParsers(cmd *cobra.Command, parsers []session.Parser, 
 		}
 		record, err := parser.ParseSession(cmd.Context(), file)
 		if err != nil {
-			return nil, fmt.Errorf("parse %s: %w", file.Path, err)
+			// A transcript is external, append-only data and can be truncated or
+			// otherwise malformed independently of every other discovered file.
+			// Keep machine-readable command output on stdout and report the
+			// individual failure on stderr instead of losing usable sessions.
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: skip session transcript %s: %v\n", file.Path, err)
+			continue
 		}
 		records = append(records, record)
 	}
