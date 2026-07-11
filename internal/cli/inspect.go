@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/rybkr/totally/internal/session"
@@ -262,54 +261,57 @@ func printShowReport(w io.Writer, report showReport) error {
 	}{
 		{"Session", report.SessionID},
 		{"Source", report.Source},
-		{"Status", stringPtrValue(report.Status)},
-		{"Created", stringPtrValue(report.CreatedAt)},
-		{"Updated", stringPtrValue(report.UpdatedAt)},
-		{"Duration", formatDurationSeconds(report.DurationSeconds)},
-		{"Project", stringPtrValue(report.Project)},
-		{"Transcript", report.Path},
-		{"Models", strings.Join(report.Models, ", ")},
 	}
+	if status := stringPtrValue(report.Status); status != "" {
+		lines = append(lines, struct{ label, value string }{"Status", status})
+	}
+	if models := strings.Join(report.Models, ", "); models != "" {
+		lines = append(lines, struct{ label, value string }{"Models", models})
+	}
+	if project := stringPtrValue(report.Project); project != "" {
+		lines = append(lines, struct{ label, value string }{"Project", project})
+	}
+	lines = append(lines,
+		struct{ label, value string }{"Time", formatShowTime(report)},
+		struct{ label, value string }{"Activity", fmt.Sprintf("%s turns · %s messages · %s tool calls", formatNumber(int64(report.Turns)), formatNumber(int64(report.Messages)), formatNumber(int64(report.ToolCalls)))},
+		struct{ label, value string }{"Tokens", formatShowTokenUsage(report.TokenUsage)},
+		struct{ label, value string }{"Transcript", report.Path},
+	)
 
 	for _, line := range lines {
-		if _, err := fmt.Fprintf(w, "%-13s %s\n", line.label+":", fallback(line.value)); err != nil {
+		if _, err := fmt.Fprintf(w, "%-11s %s\n", line.label, fallback(line.value)); err != nil {
 			return err
 		}
 	}
+	return nil
+}
 
-	if _, err := fmt.Fprintln(w, "\nACTIVITY"); err != nil {
-		return err
+func formatShowTime(report showReport) string {
+	created := stringPtrValue(report.CreatedAt)
+	updated := stringPtrValue(report.UpdatedAt)
+	if created == "" {
+		return updated
 	}
-	activity := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(activity, "Turns\tMessages\tTool calls"); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(activity, "%s\t%s\t%s\n", formatNumber(int64(report.Turns)), formatNumber(int64(report.Messages)), formatNumber(int64(report.ToolCalls))); err != nil {
-		return err
-	}
-	if err := activity.Flush(); err != nil {
-		return err
+	if updated == "" || updated == created {
+		return created
 	}
 
-	if _, err := fmt.Fprintln(w, "\nTOKEN USAGE"); err != nil {
-		return err
+	value := created + " → " + updated
+	if duration := formatDurationSeconds(report.DurationSeconds); duration != "" {
+		value += " (" + duration + ")"
 	}
-	tokens := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tokens, "Input\tCached input\tOutput\tReasoning\tTotal"); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(
-		tokens,
-		"%s\t%s\t%s\t%s\t%s\n",
-		formatNumber(report.TokenUsage.InputTokens),
-		formatNumber(report.TokenUsage.CachedInputTokens),
-		formatNumber(report.TokenUsage.OutputTokens),
-		formatNumber(report.TokenUsage.ReasoningTokens),
-		formatNumber(report.TokenUsage.TotalTokens),
-	); err != nil {
-		return err
-	}
-	return tokens.Flush()
+	return value
+}
+
+func formatShowTokenUsage(usage showTokenUsageReport) string {
+	return fmt.Sprintf(
+		"%s total · %s input (%s cached) · %s output (incl. %s reasoning)",
+		formatCompactNumber(usage.TotalTokens),
+		formatCompactNumber(usage.InputTokens),
+		formatCompactNumber(usage.CachedInputTokens),
+		formatCompactNumber(usage.OutputTokens),
+		formatCompactNumber(usage.ReasoningTokens),
+	)
 }
 
 func printTokenUsage(w io.Writer, usage session.TokenUsage) error {
@@ -445,4 +447,28 @@ func formatNumber(value int64) string {
 		b.WriteString(digits[i : i+3])
 	}
 	return b.String()
+}
+
+func formatCompactNumber(value int64) string {
+	abs := value
+	if abs < 0 {
+		abs = -abs
+	}
+
+	if abs < 1_000 {
+		return formatNumber(value)
+	}
+
+	divisor := float64(1_000)
+	unit := "K"
+	precision := 1
+	if abs >= 1_000_000 {
+		divisor = 1_000_000
+		unit = "M"
+		precision = 2
+	}
+
+	formatted := strconv.FormatFloat(float64(value)/divisor, 'f', precision, 64)
+	formatted = strings.TrimRight(strings.TrimRight(formatted, "0"), ".")
+	return formatted + unit
 }

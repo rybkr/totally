@@ -25,21 +25,14 @@ func TestShowCommandPrintsSingleSessionReport(t *testing.T) {
 
 	output := stdout.String()
 	for _, want := range []string{
-		"Session:      " + sessionID,
-		"Source:       codex",
-		"Status:       -",
-		"Created:      2026-07-09T03:20:44Z",
-		"Updated:      2026-07-09T03:20:48Z",
-		"Duration:     4s",
-		"Project:      /tmp/project",
-		"Transcript:   " + path,
-		"Models:       gpt-5, gpt-5-mini",
-		"ACTIVITY",
-		"Turns  Messages  Tool calls",
-		"2      1         1",
-		"TOKEN USAGE",
-		"Input  Cached input  Output  Reasoning  Total",
-		"100    40            25      5          125",
+		"Session     " + sessionID,
+		"Source      codex",
+		"Models      gpt-5, gpt-5-mini",
+		"Project     /tmp/project",
+		"Time        2026-07-09T03:20:44Z → 2026-07-09T03:20:48Z (4s)",
+		"Activity    2 turns · 1 messages · 1 tool calls",
+		"Tokens      125 total · 100 input (40 cached) · 25 output (incl. 5 reasoning)",
+		"Transcript  " + path,
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("missing %q in output:\n%s", want, output)
@@ -91,6 +84,20 @@ func TestShowCommandPrintsJSONReport(t *testing.T) {
 	}
 	if report.TokenUsage.TotalTokens != 125 || report.TokenUsage.ReasoningTokens != 5 {
 		t.Fatalf("unexpected token usage: %+v", report.TokenUsage)
+	}
+}
+
+func TestFormatShowTokenUsageMakesSubsetRelationshipsExplicit(t *testing.T) {
+	got := formatShowTokenUsage(showTokenUsageReport{
+		InputTokens:       1_043_777,
+		CachedInputTokens: 936_704,
+		OutputTokens:      12_788,
+		ReasoningTokens:   3_756,
+		TotalTokens:       1_056_565,
+	})
+	want := "1.06M total · 1.04M input (936.7K cached) · 12.8K output (incl. 3.8K reasoning)"
+	if got != want {
+		t.Fatalf("formatShowTokenUsage() = %q, want %q", got, want)
 	}
 }
 
