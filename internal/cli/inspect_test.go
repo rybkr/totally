@@ -296,8 +296,12 @@ func TestShowCommandRejectsAmbiguousSessionIDPrefix(t *testing.T) {
 	root := t.TempDir()
 	firstID := "019f44e4-5c01-7d22-9805-50cecaefde49"
 	secondID := "019f44e4-5c01-7d22-9805-50cecaefde50"
-	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+firstID+".jsonl", inspectFixtureForSession(firstID))
-	writeRolloutContents(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-"+secondID+".jsonl", inspectFixtureForSession(secondID))
+	firstContents := strings.Replace(inspectFixtureForSession(firstID), "/tmp/project", "/tmp/first-project", -1)
+	firstContents = strings.Replace(firstContents, "Explain this session", "First matching prompt", 1)
+	secondContents := strings.Replace(inspectFixtureForSession(secondID), "/tmp/project", "/tmp/second-project", -1)
+	secondContents = strings.Replace(secondContents, "Explain this session", "Second matching prompt", 1)
+	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+firstID+".jsonl", firstContents)
+	writeRolloutContents(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-"+secondID+".jsonl", secondContents)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -308,8 +312,16 @@ func TestShowCommandRejectsAmbiguousSessionIDPrefix(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ambiguous prefix to fail")
 	}
-	if !strings.Contains(err.Error(), `multiple sessions found for UUID prefix "019f44e4"`) {
-		t.Fatalf("unexpected error: %v", err)
+	for _, want := range []string{
+		`multiple sessions found for UUID prefix "019f44e4"`,
+		"SESSION ID\tCWD\tPROMPT",
+		firstID + "\t/tmp/first-project\tFirst matching prompt",
+		secondID + "\t/tmp/second-project\tSecond matching prompt",
+		"provide a longer prefix or pass --agent or --home to narrow the search",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("missing %q in error:\n%v", want, err)
+		}
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -170,8 +171,25 @@ func resolveShowSessionID(cmd *cobra.Command, globals globalOptions, target stri
 	case 1:
 		return matches[0], nil
 	default:
-		return session.FileRef{}, fmt.Errorf("multiple sessions found for UUID prefix %q; provide a longer prefix or pass --agent or --home to narrow the search", target)
+		records, err := parseSessionFiles(cmd, globals, matches)
+		if err != nil {
+			return session.FileRef{}, err
+		}
+		sortRecordsByCreated(records)
+		return session.FileRef{}, ambiguousSessionIDError(target, records)
 	}
+}
+
+func ambiguousSessionIDError(target string, records []session.Record) error {
+	var message strings.Builder
+	fmt.Fprintf(&message, "multiple sessions found for UUID prefix %q\n\n", target)
+	message.WriteString("SESSION ID\tCWD\tPROMPT\n")
+	home, _ := os.UserHomeDir()
+	for _, record := range records {
+		fmt.Fprintf(&message, "%s\t%s\t%s\n", record.SessionID, shortenSessionCWD(record.CWD, home), formatSessionPrompt(record.FirstPrompt))
+	}
+	message.WriteString("\nprovide a longer prefix or pass --agent or --home to narrow the search")
+	return fmt.Errorf("%s", message.String())
 }
 
 type showReport struct {
