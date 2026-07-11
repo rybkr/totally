@@ -23,6 +23,7 @@ func NewRootCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 	}
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
+	cmd.CompletionOptions.DisableDefaultCmd = true
 	addGlobalFlags(cmd, &opts)
 	cmd.AddCommand(newFilesCommand(stdout, &opts))
 	cmd.AddCommand(newShowCommand(stdout, &opts))

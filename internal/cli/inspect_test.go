@@ -313,6 +313,21 @@ func TestInspectCommandIsNotRegistered(t *testing.T) {
 	}
 }
 
+func TestCompletionCommandIsNotRegistered(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"completion"})
+
+	err := cmd.ExecuteContext(context.Background())
+	if err == nil {
+		t.Fatal("expected completion command to fail")
+	}
+	if !strings.Contains(err.Error(), `unknown command "completion"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func inspectFixture() string {
 	return inspectFixtureForSession("019f44e4-5c01-7d22-9805-50cecaefde49")
 }
