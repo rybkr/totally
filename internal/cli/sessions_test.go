@@ -77,13 +77,35 @@ func TestSessionsCommandNoPagerPrintsTableDirectly(t *testing.T) {
 }
 
 func TestFormatSessionPromptNormalizesAndTruncates(t *testing.T) {
-	prompt := "  first\n\tsecond " + strings.Repeat("long ", 20)
+	prompt := "  first\n\tsecond " + strings.Repeat("long ", 40)
 	got := formatSessionPrompt(prompt)
 	if len([]rune(got)) != sessionPromptMaxRunes || !strings.HasSuffix(got, "...") {
 		t.Fatalf("formatSessionPrompt() = %q, want %d runes ending in ellipsis", got, sessionPromptMaxRunes)
 	}
 	if strings.ContainsAny(got, "\n\t") {
 		t.Fatalf("formatSessionPrompt() retained whitespace: %q", got)
+	}
+}
+
+func TestSessionPromptMaxForTerminalWidth(t *testing.T) {
+	const (
+		sessionID = "019f44e4-5c01"
+		cwd       = "/tmp/project"
+	)
+	if got := sessionPromptMaxForTerminalWidth(48, sessionID, cwd); got != 16 {
+		t.Fatalf("sessionPromptMaxForTerminalWidth() = %d, want 16", got)
+	}
+	if got := sessionPromptMaxForTerminalWidth(35, sessionID, cwd); got != sessionPromptMinRunes {
+		t.Fatalf("sessionPromptMaxForTerminalWidth() = %d, want %d", got, sessionPromptMinRunes)
+	}
+	if got := sessionPromptMaxForTerminalWidth(200, sessionID, cwd); got != sessionPromptMaxRunes {
+		t.Fatalf("sessionPromptMaxForTerminalWidth() = %d, want %d", got, sessionPromptMaxRunes)
+	}
+}
+
+func TestFormatSessionPromptToWidthUsesTerminalDisplayWidth(t *testing.T) {
+	if got := formatSessionPromptToWidth("界界界界", 7); got != "界界..." {
+		t.Fatalf("formatSessionPromptToWidth() = %q, want %q", got, "界界...")
 	}
 }
 

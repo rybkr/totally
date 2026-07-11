@@ -14,6 +14,8 @@ import (
 
 	"github.com/rybkr/totally/internal/session"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
+	"golang.org/x/text/width"
 )
 
 type sessionsOptions struct {
@@ -95,19 +97,32 @@ func runSessions(cmd *cobra.Command, stdout io.Writer, globals globalOptions, op
 
 	switch globals.format {
 	case outputFormatTable:
+		terminalWidth, _ := outputTerminalWidth(stdout)
 		if shouldPageTable(stdout, globals.noPager) {
 			var table bytes.Buffer
-			if err := printSessionsTable(&table, records, opts.full); err != nil {
+			if err := printSessionsTableWithWidth(&table, records, opts.full, terminalWidth); err != nil {
 				return err
 			}
 			return pageTableOutput(cmd, stdout, table.Bytes())
 		}
-		return printSessionsTable(stdout, records, opts.full)
+		return printSessionsTableWithWidth(stdout, records, opts.full, terminalWidth)
 	case outputFormatJSON:
 		return json.NewEncoder(stdout).Encode(records)
 	default:
 		return fmt.Errorf("unknown format %q", globals.format)
 	}
+}
+
+func outputTerminalWidth(w io.Writer) (int, bool) {
+	file, ok := w.(*os.File)
+	if !ok || !term.IsTerminal(int(file.Fd())) {
+		return 0, false
+	}
+	columns, _, err := term.GetSize(int(file.Fd()))
+	if err != nil || columns <= 0 {
+		return 0, false
+	}
+	return columns, true
 }
 
 func shouldPageTable(stdout io.Writer, noPager bool) bool {
@@ -187,13 +202,22 @@ func parseSessionFilesWithParsers(cmd *cobra.Command, parsers []session.Parser, 
 }
 
 func printSessionsTable(w io.Writer, records []session.Record, full bool) error {
+	return printSessionsTableWithWidth(w, records, full, 0)
+}
+
+func printSessionsTableWithWidth(w io.Writer, records []session.Record, full bool, terminalWidth int) error {
 	if _, err := fmt.Fprintln(w, "SESSION ID\tCWD\tPROMPT"); err != nil {
 		return err
 	}
 	home, _ := os.UserHomeDir()
 	for _, record := range records {
 		sessionID := formatSessionID(record.SessionID)
-		prompt := formatSessionPrompt(record.FirstPrompt)
+		cwd := shortenSessionCWD(record.CWD, home)
+		promptMaxWidth := sessionPromptMaxRunes
+		if terminalWidth > 0 {
+			promptMaxWidth = sessionPromptMaxForTerminalWidth(terminalWidth, sessionID, cwd)
+		}
+		prompt := formatSessionPromptToWidth(record.FirstPrompt, promptMaxWidth)
 		if full {
 			sessionID = record.SessionID
 			prompt = record.FirstPrompt
@@ -202,7 +226,7 @@ func printSessionsTable(w io.Writer, records []session.Record, full bool) error 
 			w,
 			"%s\t%s\t%s\n",
 			sessionID,
-			shortenSessionCWD(record.CWD, home),
+			cwd,
 			prompt,
 		); err != nil {
 			return err
@@ -212,8 +236,10 @@ func printSessionsTable(w io.Writer, records []session.Record, full bool) error 
 }
 
 const (
-	sessionIDPrefixRunes  = 13
-	sessionPromptMaxRunes = 80
+	sessionIDPrefixRunes = 13
+	// Leave room for eight preview characters and the truncation ellipsis.
+	sessionPromptMinRunes = 11
+	sessionPromptMaxRunes = 160
 )
 
 func formatSessionID(sessionID string) string {
@@ -239,16 +265,67 @@ func shortenSessionCWD(cwd string, home string) string {
 }
 
 func formatSessionPrompt(prompt string) string {
+	return formatSessionPromptToWidth(prompt, sessionPromptMaxRunes)
+}
+
+func sessionPromptMaxForTerminalWidth(terminalWidth int, sessionID, cwd string) int {
+	promptStart := nextTabStop(nextTabStop(displayWidth(sessionID)) + displayWidth(cwd))
+	available := terminalWidth - promptStart
+	if available < sessionPromptMinRunes {
+		return sessionPromptMinRunes
+	}
+	if available > sessionPromptMaxRunes {
+		return sessionPromptMaxRunes
+	}
+	return available
+}
+
+func nextTabStop(column int) int {
+	const tabWidth = 8
+	return ((column / tabWidth) + 1) * tabWidth
+}
+
+func formatSessionPromptToWidth(prompt string, maxWidth int) string {
 	prompt = strings.Join(strings.Fields(prompt), " ")
+	if maxWidth <= 0 {
+		return ""
+	}
 	if prompt == "" {
 		return "-"
 	}
 
-	runes := []rune(prompt)
-	if len(runes) <= sessionPromptMaxRunes {
+	if displayWidth(prompt) <= maxWidth {
 		return prompt
 	}
-	return string(runes[:sessionPromptMaxRunes-3]) + "..."
+	if maxWidth <= 3 {
+		return strings.Repeat(".", maxWidth)
+	}
+
+	limit := maxWidth - 3
+	used := 0
+	var preview strings.Builder
+	for _, r := range prompt {
+		runeWidth := displayWidth(string(r))
+		if used+runeWidth > limit {
+			break
+		}
+		preview.WriteRune(r)
+		used += runeWidth
+	}
+	return preview.String() + "..."
+}
+
+func displayWidth(value string) int {
+	columns := 0
+	for _, r := range value {
+		switch width.LookupRune(r).Kind() {
+		case width.EastAsianWide, width.EastAsianFullwidth:
+			columns += 2
+		default:
+			columns++
+		}
+	}
+	return columns
 }
 
 func printSessionIDs(w io.Writer, records []session.Record) error {
