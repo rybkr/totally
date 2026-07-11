@@ -37,26 +37,26 @@ type inspectSummary struct {
 	TokenUsage session.TokenUsage
 }
 
-func newInspectCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
+func newShowCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "inspect <session-id>",
+		Use:   "show <session-id>",
 		Short: "Show a detailed, single-session report",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runInspect(cmd, stdout, *globals, args)
+			return runShow(cmd, stdout, *globals, args)
 		},
 	}
 
 	return cmd
 }
 
-func runInspect(cmd *cobra.Command, stdout io.Writer, globals globalOptions, args []string) error {
+func runShow(cmd *cobra.Command, stdout io.Writer, globals globalOptions, args []string) error {
 	parsers, err := globals.parsers()
 	if err != nil {
 		return err
 	}
 
-	file, err := resolveInspectSessionID(cmd, globals, args[0])
+	file, err := resolveShowSessionID(cmd, globals, args[0])
 	if err != nil {
 		return err
 	}
@@ -71,10 +71,10 @@ func runInspect(cmd *cobra.Command, stdout io.Writer, globals globalOptions, arg
 		return err
 	}
 
-	report := newInspectReport(record)
+	report := newShowReport(record)
 	switch globals.format {
 	case outputFormatTable:
-		return printInspectReport(stdout, report)
+		return printShowReport(stdout, report)
 	case outputFormatJSON:
 		return json.NewEncoder(stdout).Encode(report)
 	default:
@@ -104,7 +104,7 @@ func parserForSource(parsers []session.Parser, source session.Source) (session.P
 	return nil, fmt.Errorf("no parser registered for source %q", source)
 }
 
-func resolveInspectSessionID(cmd *cobra.Command, globals globalOptions, target string) (session.FileRef, error) {
+func resolveShowSessionID(cmd *cobra.Command, globals globalOptions, target string) (session.FileRef, error) {
 	if !fullSessionIDPattern.MatchString(target) {
 		return session.FileRef{}, fmt.Errorf("malformed session ID %q: expected full session UUID", target)
 	}
@@ -140,23 +140,23 @@ func resolveInspectSessionID(cmd *cobra.Command, globals globalOptions, target s
 	}
 }
 
-type inspectReport struct {
-	SessionID       string                  `json:"session_id"`
-	Source          string                  `json:"source"`
-	Status          *string                 `json:"status"`
-	CreatedAt       *string                 `json:"created_at"`
-	UpdatedAt       *string                 `json:"updated_at"`
-	DurationSeconds *int64                  `json:"duration_seconds"`
-	Project         *string                 `json:"project"`
-	Path            string                  `json:"path"`
-	Models          []string                `json:"models"`
-	Turns           int                     `json:"turns"`
-	Messages        int                     `json:"messages"`
-	ToolCalls       int                     `json:"tool_calls"`
-	TokenUsage      inspectTokenUsageReport `json:"token_usage"`
+type showReport struct {
+	SessionID       string               `json:"session_id"`
+	Source          string               `json:"source"`
+	Status          *string              `json:"status"`
+	CreatedAt       *string              `json:"created_at"`
+	UpdatedAt       *string              `json:"updated_at"`
+	DurationSeconds *int64               `json:"duration_seconds"`
+	Project         *string              `json:"project"`
+	Path            string               `json:"path"`
+	Models          []string             `json:"models"`
+	Turns           int                  `json:"turns"`
+	Messages        int                  `json:"messages"`
+	ToolCalls       int                  `json:"tool_calls"`
+	TokenUsage      showTokenUsageReport `json:"token_usage"`
 }
 
-type inspectTokenUsageReport struct {
+type showTokenUsageReport struct {
 	InputTokens       int64 `json:"input_tokens"`
 	CachedInputTokens int64 `json:"cached_input_tokens"`
 	OutputTokens      int64 `json:"output_tokens"`
@@ -164,8 +164,8 @@ type inspectTokenUsageReport struct {
 	TotalTokens       int64 `json:"total_tokens"`
 }
 
-func newInspectReport(record session.Record) inspectReport {
-	report := inspectReport{
+func newShowReport(record session.Record) showReport {
+	report := showReport{
 		SessionID: record.SessionID,
 		Source:    string(record.Source),
 		Path:      record.Path,
@@ -173,7 +173,7 @@ func newInspectReport(record session.Record) inspectReport {
 		Turns:     record.Turns,
 		Messages:  record.Messages,
 		ToolCalls: record.ToolCalls,
-		TokenUsage: inspectTokenUsageReport{
+		TokenUsage: showTokenUsageReport{
 			InputTokens:       record.TokenUsage.InputTokens,
 			CachedInputTokens: record.TokenUsage.CachedInputTokens,
 			OutputTokens:      record.TokenUsage.OutputTokens,
@@ -255,7 +255,7 @@ func printInspectSummary(w io.Writer, summary inspectSummary) error {
 	return printTokenUsage(w, summary.TokenUsage)
 }
 
-func printInspectReport(w io.Writer, report inspectReport) error {
+func printShowReport(w io.Writer, report showReport) error {
 	lines := []struct {
 		label string
 		value string

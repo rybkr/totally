@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func TestInspectCommandPrintsSingleSessionReport(t *testing.T) {
+func TestShowCommandPrintsSingleSessionReport(t *testing.T) {
 	root := t.TempDir()
 	sessionID := "019f44e4-5c01-7d22-9805-50cecaefde49"
 	path := writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+sessionID+".jsonl", inspectFixtureForSession(sessionID))
@@ -17,7 +17,7 @@ func TestInspectCommandPrintsSingleSessionReport(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd := newTestRootCommand(t, &stdout, &stderr)
-	cmd.SetArgs([]string{"inspect", "--home", root, sessionID})
+	cmd.SetArgs([]string{"show", "--home", root, sessionID})
 
 	if err := cmd.ExecuteContext(context.Background()); err != nil {
 		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
@@ -47,7 +47,7 @@ func TestInspectCommandPrintsSingleSessionReport(t *testing.T) {
 	}
 }
 
-func TestInspectCommandPrintsJSONReport(t *testing.T) {
+func TestShowCommandPrintsJSONReport(t *testing.T) {
 	root := t.TempDir()
 	sessionID := "019f44e4-5c01-7d22-9805-50cecaefde49"
 	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+sessionID+".jsonl", inspectFixtureForSession(sessionID))
@@ -55,13 +55,13 @@ func TestInspectCommandPrintsJSONReport(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd := newTestRootCommand(t, &stdout, &stderr)
-	cmd.SetArgs([]string{"inspect", "--home", root, sessionID, "--format", "json"})
+	cmd.SetArgs([]string{"show", "--home", root, sessionID, "--format", "json"})
 
 	if err := cmd.ExecuteContext(context.Background()); err != nil {
 		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
 	}
 
-	var report inspectReport
+	var report showReport
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatalf("invalid JSON output: %v\n%s", err, stdout.String())
 	}
@@ -94,11 +94,11 @@ func TestInspectCommandPrintsJSONReport(t *testing.T) {
 	}
 }
 
-func TestInspectCommandRejectsMissingSessionID(t *testing.T) {
+func TestShowCommandRejectsMissingSessionID(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd := newTestRootCommand(t, &stdout, &stderr)
-	cmd.SetArgs([]string{"inspect"})
+	cmd.SetArgs([]string{"show"})
 
 	err := cmd.ExecuteContext(context.Background())
 	if err == nil {
@@ -109,11 +109,11 @@ func TestInspectCommandRejectsMissingSessionID(t *testing.T) {
 	}
 }
 
-func TestInspectCommandRejectsMalformedSessionID(t *testing.T) {
+func TestShowCommandRejectsMalformedSessionID(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd := newTestRootCommand(t, &stdout, &stderr)
-	cmd.SetArgs([]string{"inspect", "missing-session"})
+	cmd.SetArgs([]string{"show", "missing-session"})
 
 	err := cmd.ExecuteContext(context.Background())
 	if err == nil {
@@ -127,14 +127,14 @@ func TestInspectCommandRejectsMalformedSessionID(t *testing.T) {
 	}
 }
 
-func TestInspectCommandRejectsPathTarget(t *testing.T) {
+func TestShowCommandRejectsPathTarget(t *testing.T) {
 	root := t.TempDir()
 	path := writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl", inspectFixture())
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd := newTestRootCommand(t, &stdout, &stderr)
-	cmd.SetArgs([]string{"inspect", path})
+	cmd.SetArgs([]string{"show", path})
 
 	err := cmd.ExecuteContext(context.Background())
 	if err == nil {
@@ -145,13 +145,13 @@ func TestInspectCommandRejectsPathTarget(t *testing.T) {
 	}
 }
 
-func TestInspectCommandErrorsForUnknownSessionID(t *testing.T) {
+func TestShowCommandErrorsForUnknownSessionID(t *testing.T) {
 	root := t.TempDir()
 	sessionID := "019f44e4-5c01-7d22-9805-50cecaefde49"
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd := newTestRootCommand(t, &stdout, &stderr)
-	cmd.SetArgs([]string{"inspect", "--home", root, sessionID})
+	cmd.SetArgs([]string{"show", "--home", root, sessionID})
 
 	err := cmd.ExecuteContext(context.Background())
 	if err == nil {
@@ -165,11 +165,11 @@ func TestInspectCommandErrorsForUnknownSessionID(t *testing.T) {
 	}
 }
 
-func TestInspectCommandInvalidFormatIsUsageError(t *testing.T) {
+func TestShowCommandInvalidFormatIsUsageError(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd := newTestRootCommand(t, &stdout, &stderr)
-	cmd.SetArgs([]string{"inspect", "019f44e4-5c01-7d22-9805-50cecaefde49", "--format", "xml"})
+	cmd.SetArgs([]string{"show", "019f44e4-5c01-7d22-9805-50cecaefde49", "--format", "xml"})
 
 	err := cmd.ExecuteContext(context.Background())
 	if err == nil {
@@ -177,6 +177,24 @@ func TestInspectCommandInvalidFormatIsUsageError(t *testing.T) {
 	}
 	if ExitCode(err) != 2 {
 		t.Fatalf("expected exit code 2, got %d", ExitCode(err))
+	}
+}
+
+func TestInspectCommandIsNotRegistered(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"inspect"})
+
+	err := cmd.ExecuteContext(context.Background())
+	if err == nil {
+		t.Fatal("expected retired inspect command to fail")
+	}
+	if !strings.Contains(err.Error(), `unknown command "inspect"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ExitCode(err) != 1 {
+		t.Fatalf("expected exit code 1, got %d", ExitCode(err))
 	}
 }
 
