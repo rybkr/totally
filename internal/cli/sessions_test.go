@@ -27,7 +27,7 @@ func TestSessionsCommandPrintsTable(t *testing.T) {
 	output := stdout.String()
 	for _, want := range []string{
 		"SESSION ID\tCWD\tPROMPT",
-		"019f44e4\t/tmp/project\tExplain this session",
+		"019f44e4-5c01\t/tmp/project\tExplain this session",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("missing %q in output:\n%s", want, output)
@@ -54,7 +54,7 @@ func TestSessionsCommandFullPrintsFullSessionID(t *testing.T) {
 }
 
 func TestFormatSessionIDTruncatesToPrefix(t *testing.T) {
-	if got := formatSessionID("019f44e4-5c01-7d22-9805-50cecaefde49"); got != "019f44e4" {
+	if got := formatSessionID("019f44e4-5c01-7d22-9805-50cecaefde49"); got != "019f44e4-5c01" {
 		t.Fatalf("formatSessionID() = %q, want UUID prefix", got)
 	}
 }

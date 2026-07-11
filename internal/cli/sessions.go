@@ -212,7 +212,7 @@ func printSessionsTable(w io.Writer, records []session.Record, full bool) error 
 }
 
 const (
-	sessionIDPrefixRunes  = 8
+	sessionIDPrefixRunes  = 13
 	sessionPromptMaxRunes = 80
 )
 
