@@ -1,9 +1,13 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -89,12 +93,53 @@ func runSessions(cmd *cobra.Command, stdout io.Writer, globals globalOptions, op
 
 	switch globals.format {
 	case outputFormatTable:
+		if shouldPageSessions(stdout, globals.noPager) {
+			var table bytes.Buffer
+			if err := printSessionsTable(&table, records); err != nil {
+				return err
+			}
+			return pageSessionsOutput(cmd, stdout, table.Bytes())
+		}
 		return printSessionsTable(stdout, records)
 	case outputFormatJSON:
 		return json.NewEncoder(stdout).Encode(records)
 	default:
 		return fmt.Errorf("unknown format %q", globals.format)
 	}
+}
+
+func shouldPageSessions(stdout io.Writer, noPager bool) bool {
+	if noPager {
+		return false
+	}
+	file, ok := stdout.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+func pageSessionsOutput(cmd *cobra.Command, stdout io.Writer, output []byte) error {
+	args := strings.Fields(os.Getenv("PAGER"))
+	if len(args) == 0 {
+		args = []string{"less", "-FRX"}
+	}
+
+	pagerPath, err := exec.LookPath(args[0])
+	if err != nil {
+		_, writeErr := stdout.Write(output)
+		return writeErr
+	}
+
+	pager := exec.CommandContext(cmd.Context(), pagerPath, args[1:]...)
+	pager.Stdin = bytes.NewReader(output)
+	pager.Stdout = stdout
+	pager.Stderr = cmd.ErrOrStderr()
+	if err := pager.Run(); err != nil {
+		return fmt.Errorf("run pager %q: %w", args[0], err)
+	}
+	return nil
 }
 
 func validateSessionsOptions(opts sessionsOptions) error {
@@ -135,27 +180,51 @@ func parseSessionFilesWithParsers(cmd *cobra.Command, parsers []session.Parser, 
 }
 
 func printSessionsTable(w io.Writer, records []session.Record) error {
-	if _, err := fmt.Fprintln(w, "SESSION\tCREATED\tUPDATED\tMODELS\tTURNS\tMESSAGES\tTOOLS\tTOKENS\tCWD"); err != nil {
+	if _, err := fmt.Fprintln(w, "SESSION ID\tCWD\tPROMPT"); err != nil {
 		return err
 	}
+	home, _ := os.UserHomeDir()
 	for _, record := range records {
 		if _, err := fmt.Fprintf(
 			w,
-			"%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%s\n",
+			"%s\t%s\t%s\n",
 			record.SessionID,
-			formatTime(record.CreatedAt),
-			formatTime(record.UpdatedAt),
-			strings.Join(record.Models, ", "),
-			record.Turns,
-			record.Messages,
-			record.ToolCalls,
-			record.TokenUsage.TotalTokens,
-			record.CWD,
+			shortenSessionCWD(record.CWD, home),
+			formatSessionPrompt(record.FirstPrompt),
 		); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+const sessionPromptMaxRunes = 80
+
+func shortenSessionCWD(cwd string, home string) string {
+	if cwd == "" || home == "" {
+		return fallback(cwd)
+	}
+	if cwd == home {
+		return "~"
+	}
+	prefix := home + string(filepath.Separator)
+	if strings.HasPrefix(cwd, prefix) {
+		return "~" + strings.TrimPrefix(cwd, home)
+	}
+	return cwd
+}
+
+func formatSessionPrompt(prompt string) string {
+	prompt = strings.Join(strings.Fields(prompt), " ")
+	if prompt == "" {
+		return "-"
+	}
+
+	runes := []rune(prompt)
+	if len(runes) <= sessionPromptMaxRunes {
+		return prompt
+	}
+	return string(runes[:sessionPromptMaxRunes-3]) + "..."
 }
 
 func printSessionIDs(w io.Writer, records []session.Record) error {

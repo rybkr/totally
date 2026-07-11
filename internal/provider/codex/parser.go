@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
@@ -203,8 +204,12 @@ func applyEventMsg(payload json.RawMessage, record *session.Record) error {
 
 func applyResponseItem(payload json.RawMessage, record *session.Record) error {
 	var item struct {
-		Type string `json:"type"`
-		Role string `json:"role"`
+		Type    string `json:"type"`
+		Role    string `json:"role"`
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
 	}
 	if err := json.Unmarshal(payload, &item); err != nil {
 		return err
@@ -213,10 +218,33 @@ func applyResponseItem(payload json.RawMessage, record *session.Record) error {
 	switch item.Type {
 	case "message":
 		record.Messages++
+		if item.Role == "user" && record.FirstPrompt == "" {
+			if prompt := firstPromptText(item.Content); prompt != "" {
+				record.FirstPrompt = prompt
+			}
+		}
 	case "function_call", "custom_tool_call":
 		record.ToolCalls++
 	}
 	return nil
+}
+
+func firstPromptText(content []struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}) string {
+	var parts []string
+	for _, part := range content {
+		text := strings.TrimSpace(part.Text)
+		if part.Type != "input_text" || text == "" {
+			continue
+		}
+		if strings.HasPrefix(text, "# AGENTS.md instructions") || strings.HasPrefix(text, "<environment_context>") {
+			continue
+		}
+		parts = append(parts, text)
+	}
+	return strings.Join(parts, "\n")
 }
 
 type codexTokenUsage struct {

@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var fullSessionIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var sessionIDPrefixPattern = regexp.MustCompile(`^[0-9a-fA-F-]+$`)
 
 type inspectSummary struct {
 	Sessions int
@@ -136,8 +136,8 @@ func parserForSource(parsers []session.Parser, source session.Source) (session.P
 }
 
 func resolveShowSessionID(cmd *cobra.Command, globals globalOptions, target string) (session.FileRef, error) {
-	if !fullSessionIDPattern.MatchString(target) {
-		return session.FileRef{}, fmt.Errorf("malformed session ID %q: expected full session UUID", target)
+	if !sessionIDPrefixPattern.MatchString(target) {
+		return session.FileRef{}, fmt.Errorf("malformed session ID %q: expected a UUID prefix", target)
 	}
 
 	finders, err := globals.finders()
@@ -155,7 +155,7 @@ func resolveShowSessionID(cmd *cobra.Command, globals globalOptions, target stri
 			return session.FileRef{}, err
 		}
 		for _, file := range files {
-			if strings.EqualFold(file.SessionID, target) {
+			if strings.HasPrefix(strings.ToLower(file.SessionID), strings.ToLower(target)) {
 				matches = append(matches, file)
 			}
 		}
@@ -167,24 +167,26 @@ func resolveShowSessionID(cmd *cobra.Command, globals globalOptions, target stri
 	case 1:
 		return matches[0], nil
 	default:
-		return session.FileRef{}, fmt.Errorf("multiple sessions found for %q; pass --agent or --home to narrow the search", target)
+		return session.FileRef{}, fmt.Errorf("multiple sessions found for UUID prefix %q; provide a longer prefix or pass --agent or --home to narrow the search", target)
 	}
 }
 
 type showReport struct {
 	SessionID       string               `json:"session_id"`
 	Source          string               `json:"source"`
-	Status          *string              `json:"status"`
 	CreatedAt       *string              `json:"created_at"`
 	UpdatedAt       *string              `json:"updated_at"`
 	DurationSeconds *int64               `json:"duration_seconds"`
 	Project         *string              `json:"project"`
+	Provider        *string              `json:"provider"`
+	FirstPrompt     *string              `json:"first_prompt"`
 	Path            string               `json:"path"`
 	Models          []string             `json:"models"`
 	Turns           int                  `json:"turns"`
 	Messages        int                  `json:"messages"`
 	ToolCalls       int                  `json:"tool_calls"`
 	TokenUsage      showTokenUsageReport `json:"token_usage"`
+	CostUSD         float64              `json:"cost_usd"`
 }
 
 type showTokenUsageReport struct {
@@ -226,6 +228,14 @@ func newShowReport(record session.Record) showReport {
 	}
 	if record.CWD != "" {
 		report.Project = &record.CWD
+	}
+	if record.Provider != "" {
+		provider := record.Provider
+		report.Provider = &provider
+	}
+	if record.FirstPrompt != "" {
+		prompt := record.FirstPrompt
+		report.FirstPrompt = &prompt
 	}
 	return report
 }
@@ -294,19 +304,23 @@ func printShowReport(w io.Writer, report showReport) error {
 		{"Session", report.SessionID},
 		{"Source", report.Source},
 	}
-	if status := stringPtrValue(report.Status); status != "" {
-		lines = append(lines, struct{ label, value string }{"Status", status})
-	}
 	if models := strings.Join(report.Models, ", "); models != "" {
 		lines = append(lines, struct{ label, value string }{"Models", models})
 	}
 	if project := stringPtrValue(report.Project); project != "" {
 		lines = append(lines, struct{ label, value string }{"Project", project})
 	}
+	if provider := stringPtrValue(report.Provider); provider != "" {
+		lines = append(lines, struct{ label, value string }{"Provider", provider})
+	}
+	if prompt := stringPtrValue(report.FirstPrompt); prompt != "" {
+		lines = append(lines, struct{ label, value string }{"Prompt", prompt})
+	}
 	lines = append(lines,
 		struct{ label, value string }{"Time", formatShowTime(report)},
 		struct{ label, value string }{"Activity", fmt.Sprintf("%s turns, %s messages, %s tool calls", formatNumber(int64(report.Turns)), formatNumber(int64(report.Messages)), formatNumber(int64(report.ToolCalls)))},
 		struct{ label, value string }{"Tokens", formatShowTokenUsage(report.TokenUsage)},
+		struct{ label, value string }{"Cost", formatCostUSD(report.CostUSD)},
 		struct{ label, value string }{"Transcript", report.Path},
 	)
 
@@ -316,6 +330,10 @@ func printShowReport(w io.Writer, report showReport) error {
 		}
 	}
 	return nil
+}
+
+func formatCostUSD(cost float64) string {
+	return fmt.Sprintf("$%.2f USD", cost)
 }
 
 func formatShowTime(report showReport) string {

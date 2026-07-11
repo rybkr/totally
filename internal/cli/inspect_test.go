@@ -29,9 +29,12 @@ func TestShowCommandPrintsSingleSessionReport(t *testing.T) {
 		"Source      codex",
 		"Models      gpt-5, gpt-5-mini",
 		"Project     /tmp/project",
+		"Provider    openai",
+		"Prompt      Explain this session",
 		"Time        2026-07-09T03:20:44Z -> 2026-07-09T03:20:48Z (4s)",
 		"Activity    2 turns, 1 messages, 1 tool calls",
 		"Tokens      125 total; 100 input (40 cached); 25 output (incl. 5 reasoning)",
+		"Cost        $0.00 USD",
 		"Transcript  " + path,
 	} {
 		if !strings.Contains(output, want) {
@@ -78,11 +81,15 @@ func TestShowCommandPrintsJSONReport(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatalf("invalid JSON output: %v\n%s", err, stdout.String())
 	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(stdout.Bytes(), &fields); err != nil {
+		t.Fatalf("invalid JSON object: %v\n%s", err, stdout.String())
+	}
+	if _, found := fields["status"]; found {
+		t.Fatalf("status must not be present in JSON output: %s", stdout.String())
+	}
 	if report.SessionID != sessionID {
 		t.Fatalf("unexpected session ID: %s", report.SessionID)
-	}
-	if report.Status != nil {
-		t.Fatalf("expected unknown status to be null, got %q", *report.Status)
 	}
 	if report.CreatedAt == nil || *report.CreatedAt != "2026-07-09T03:20:44Z" {
 		t.Fatalf("unexpected created_at: %+v", report.CreatedAt)
@@ -95,6 +102,15 @@ func TestShowCommandPrintsJSONReport(t *testing.T) {
 	}
 	if report.Project == nil || *report.Project != "/tmp/project" {
 		t.Fatalf("unexpected project: %+v", report.Project)
+	}
+	if report.Provider == nil || *report.Provider != "openai" {
+		t.Fatalf("unexpected provider: %+v", report.Provider)
+	}
+	if report.FirstPrompt == nil || *report.FirstPrompt != "Explain this session" {
+		t.Fatalf("unexpected first prompt: %+v", report.FirstPrompt)
+	}
+	if report.CostUSD != 0 {
+		t.Fatalf("unexpected cost: %v", report.CostUSD)
 	}
 	if len(report.Models) != 2 || report.Models[0] != "gpt-5" || report.Models[1] != "gpt-5-mini" {
 		t.Fatalf("unexpected models: %+v", report.Models)
@@ -151,6 +167,45 @@ func TestShowCommandRejectsMalformedSessionID(t *testing.T) {
 	}
 	if ExitCode(err) != 1 {
 		t.Fatalf("expected exit code 1, got %d", ExitCode(err))
+	}
+}
+
+func TestShowCommandAcceptsUniqueSessionIDPrefix(t *testing.T) {
+	root := t.TempDir()
+	sessionID := "019f44e4-5c01-7d22-9805-50cecaefde49"
+	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+sessionID+".jsonl", inspectFixtureForSession(sessionID))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"show", "--home", root, "019f44e4"})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Session     "+sessionID) {
+		t.Fatalf("expected session %q, got:\n%s", sessionID, stdout.String())
+	}
+}
+
+func TestShowCommandRejectsAmbiguousSessionIDPrefix(t *testing.T) {
+	root := t.TempDir()
+	firstID := "019f44e4-5c01-7d22-9805-50cecaefde49"
+	secondID := "019f44e4-5c01-7d22-9805-50cecaefde50"
+	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+firstID+".jsonl", inspectFixtureForSession(firstID))
+	writeRolloutContents(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-"+secondID+".jsonl", inspectFixtureForSession(secondID))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"show", "--home", root, "019f44e4"})
+
+	err := cmd.ExecuteContext(context.Background())
+	if err == nil {
+		t.Fatal("expected ambiguous prefix to fail")
+	}
+	if !strings.Contains(err.Error(), `multiple sessions found for UUID prefix "019f44e4"`) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -238,7 +293,7 @@ func inspectFixtureForSessionAt(sessionID string, start time.Time) string {
 {"timestamp":"` + start.Add(time.Second).Format(time.RFC3339) + `","type":"turn_context","payload":{"cwd":"/tmp/project","model":"gpt-5"}}
 {"timestamp":"` + start.Add(time.Second).Format(time.RFC3339) + `","type":"turn_context","payload":{"cwd":"/tmp/project","model":"gpt-5-mini"}}
 {"timestamp":"` + start.Add(2*time.Second).Format(time.RFC3339) + `","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":25,"reasoning_output_tokens":5,"total_tokens":125}}}}
-{"timestamp":"` + start.Add(3*time.Second).Format(time.RFC3339) + `","type":"response_item","payload":{"type":"message","role":"user","content":[]}}
+{"timestamp":"` + start.Add(3*time.Second).Format(time.RFC3339) + `","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Explain this session"}]}}
 {"timestamp":"` + start.Add(4*time.Second).Format(time.RFC3339) + `","type":"response_item","payload":{"type":"function_call","name":"exec_command"}}
 `
 }

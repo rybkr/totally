@@ -55,6 +55,9 @@ func TestParserParseSession(t *testing.T) {
 	if record.CLIVersion != "0.142.5" {
 		t.Fatalf("unexpected cli version: %s", record.CLIVersion)
 	}
+	if record.FirstPrompt != "Explain this session" {
+		t.Fatalf("unexpected first prompt: %q", record.FirstPrompt)
+	}
 	wantModels := []string{"gpt-5", "gpt-5-mini"}
 	if !slices.Equal(record.Models, wantModels) {
 		t.Fatalf("unexpected models: %+v", record.Models)
@@ -149,7 +152,7 @@ func rolloutFixture() string {
 {"timestamp":"2026-07-09T03:20:45Z","type":"turn_context","payload":{"turn_id":"turn-2","cwd":"/tmp/project","model":"gpt-5-mini"}}
 {"timestamp":"2026-07-09T03:20:45Z","type":"turn_context","payload":{"turn_id":"turn-3","cwd":"/tmp/project","model":"gpt-5"}}
 {"timestamp":"2026-07-09T03:20:46Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":25,"reasoning_output_tokens":5,"total_tokens":125},"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":25,"reasoning_output_tokens":5,"total_tokens":125},"model_context_window":258400}}}
-{"timestamp":"2026-07-09T03:20:47Z","type":"response_item","payload":{"type":"message","role":"user","content":[]}}
+{"timestamp":"2026-07-09T03:20:47Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Explain this session"}]}}
 {"timestamp":"2026-07-09T03:20:48Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[]}}
 {"timestamp":"2026-07-09T03:20:49Z","type":"response_item","payload":{"type":"function_call","name":"exec_command"}}
 {"timestamp":"2026-07-09T03:20:50Z","type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch"}}

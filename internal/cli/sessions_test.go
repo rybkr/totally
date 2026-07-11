@@ -26,14 +26,40 @@ func TestSessionsCommandPrintsTable(t *testing.T) {
 
 	output := stdout.String()
 	for _, want := range []string{
-		"SESSION\tCREATED\tUPDATED\tMODELS\tTURNS\tMESSAGES\tTOOLS\tTOKENS\tCWD",
-		"019f44e4-5c01-7d22-9805-50cecaefde49",
-		"gpt-5, gpt-5-mini",
-		"\t2\t1\t1\t125\t/tmp/project",
+		"SESSION ID\tCWD\tPROMPT",
+		"019f44e4-5c01-7d22-9805-50cecaefde49\t/tmp/project\tExplain this session",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("missing %q in output:\n%s", want, output)
 		}
+	}
+}
+
+func TestSessionsCommandNoPagerPrintsTableDirectly(t *testing.T) {
+	root := t.TempDir()
+	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl", inspectFixture())
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"--no-pager", "sessions", "--home", root})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "SESSION ID\tCWD\tPROMPT") {
+		t.Fatalf("expected direct table output, got:\n%s", stdout.String())
+	}
+}
+
+func TestFormatSessionPromptNormalizesAndTruncates(t *testing.T) {
+	prompt := "  first\n\tsecond " + strings.Repeat("long ", 20)
+	got := formatSessionPrompt(prompt)
+	if len([]rune(got)) != sessionPromptMaxRunes || !strings.HasSuffix(got, "...") {
+		t.Fatalf("formatSessionPrompt() = %q, want %d runes ending in ellipsis", got, sessionPromptMaxRunes)
+	}
+	if strings.ContainsAny(got, "\n\t") {
+		t.Fatalf("formatSessionPrompt() retained whitespace: %q", got)
 	}
 }
 

@@ -80,7 +80,7 @@ totally show --latest
 
 The report includes session metadata, project, first prompt/task descriptor,
 transcript location, model/provider use, prompts, turns, messages, tool calls,
-duration, token breakdown, estimated cost, and the pricing assumptions used.
+duration, token breakdown, and estimated cost.
 
 ## Compare usage and cost
 

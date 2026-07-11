@@ -23,10 +23,11 @@ type Record struct {
 	UpdatedAt time.Time
 	SizeBytes int64
 
-	CWD        string
-	Models     []string
-	Provider   string
-	CLIVersion string
+	CWD         string
+	Models      []string
+	Provider    string
+	CLIVersion  string
+	FirstPrompt string
 
 	Turns     int
 	Messages  int

@@ -50,6 +50,7 @@ type globalOptions struct {
 	since    string
 	until    string
 	format   string
+	noPager  bool
 }
 
 type timeRange struct {
@@ -65,6 +66,7 @@ func addGlobalFlags(cmd *cobra.Command, opts *globalOptions) {
 	cmd.PersistentFlags().StringVar(&opts.since, "since", "", "include sessions at or after TIME (duration units: h, d, w, y; or YYYY-MM-DD/RFC3339)")
 	cmd.PersistentFlags().StringVar(&opts.until, "until", "", "include sessions at or before TIME (duration units: h, d, w, y; or YYYY-MM-DD/RFC3339)")
 	cmd.PersistentFlags().StringVar(&opts.format, "format", "table", "output format: table, json")
+	cmd.PersistentFlags().BoolVar(&opts.noPager, "no-pager", false, "disable terminal paging")
 }
 
 func loadGlobalOptions(cmd *cobra.Command, opts *globalOptions) error {
