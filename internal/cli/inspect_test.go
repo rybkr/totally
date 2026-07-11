@@ -29,9 +29,9 @@ func TestShowCommandPrintsSingleSessionReport(t *testing.T) {
 		"Source      codex",
 		"Models      gpt-5, gpt-5-mini",
 		"Project     /tmp/project",
-		"Time        2026-07-09T03:20:44Z → 2026-07-09T03:20:48Z (4s)",
-		"Activity    2 turns · 1 messages · 1 tool calls",
-		"Tokens      125 total · 100 input (40 cached) · 25 output (incl. 5 reasoning)",
+		"Time        2026-07-09T03:20:44Z -> 2026-07-09T03:20:48Z (4s)",
+		"Activity    2 turns, 1 messages, 1 tool calls",
+		"Tokens      125 total; 100 input (40 cached); 25 output (incl. 5 reasoning)",
 		"Transcript  " + path,
 	} {
 		if !strings.Contains(output, want) {
@@ -95,7 +95,7 @@ func TestFormatShowTokenUsageMakesSubsetRelationshipsExplicit(t *testing.T) {
 		ReasoningTokens:   3_756,
 		TotalTokens:       1_056_565,
 	})
-	want := "1.06M total · 1.04M input (936.7K cached) · 12.8K output (incl. 3.8K reasoning)"
+	want := "1.06M total; 1.04M input (936.7K cached); 12.8K output (incl. 3.8K reasoning)"
 	if got != want {
 		t.Fatalf("formatShowTokenUsage() = %q, want %q", got, want)
 	}

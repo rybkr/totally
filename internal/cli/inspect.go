@@ -273,7 +273,7 @@ func printShowReport(w io.Writer, report showReport) error {
 	}
 	lines = append(lines,
 		struct{ label, value string }{"Time", formatShowTime(report)},
-		struct{ label, value string }{"Activity", fmt.Sprintf("%s turns · %s messages · %s tool calls", formatNumber(int64(report.Turns)), formatNumber(int64(report.Messages)), formatNumber(int64(report.ToolCalls)))},
+		struct{ label, value string }{"Activity", fmt.Sprintf("%s turns, %s messages, %s tool calls", formatNumber(int64(report.Turns)), formatNumber(int64(report.Messages)), formatNumber(int64(report.ToolCalls)))},
 		struct{ label, value string }{"Tokens", formatShowTokenUsage(report.TokenUsage)},
 		struct{ label, value string }{"Transcript", report.Path},
 	)
@@ -296,7 +296,7 @@ func formatShowTime(report showReport) string {
 		return created
 	}
 
-	value := created + " → " + updated
+	value := created + " -> " + updated
 	if duration := formatDurationSeconds(report.DurationSeconds); duration != "" {
 		value += " (" + duration + ")"
 	}
@@ -305,7 +305,7 @@ func formatShowTime(report showReport) string {
 
 func formatShowTokenUsage(usage showTokenUsageReport) string {
 	return fmt.Sprintf(
-		"%s total · %s input (%s cached) · %s output (incl. %s reasoning)",
+		"%s total; %s input (%s cached); %s output (incl. %s reasoning)",
 		formatCompactNumber(usage.TotalTokens),
 		formatCompactNumber(usage.InputTokens),
 		formatCompactNumber(usage.CachedInputTokens),
