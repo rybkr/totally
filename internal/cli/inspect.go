@@ -39,6 +39,7 @@ type inspectSummary struct {
 
 type showOptions struct {
 	latest bool
+	full   bool
 }
 
 func newShowCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
@@ -61,6 +62,7 @@ func newShowCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&opts.latest, "latest", false, "show the most recently updated session")
+	cmd.Flags().BoolVar(&opts.full, "full", false, "do not truncate display values in table output")
 
 	return cmd
 }
@@ -106,7 +108,7 @@ func runShow(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts s
 	report := newShowReport(record, globals.prices)
 	switch globals.format {
 	case outputFormatTable:
-		return printShowReport(stdout, report)
+		return printShowReport(stdout, report, opts.full)
 	case outputFormatJSON:
 		return json.NewEncoder(stdout).Encode(report)
 	default:
@@ -301,7 +303,7 @@ func printInspectSummary(w io.Writer, summary inspectSummary) error {
 	return printTokenUsage(w, summary.TokenUsage)
 }
 
-func printShowReport(w io.Writer, report showReport) error {
+func printShowReport(w io.Writer, report showReport, full bool) error {
 	lines := []struct {
 		label string
 		value string
@@ -319,6 +321,9 @@ func printShowReport(w io.Writer, report showReport) error {
 		lines = append(lines, struct{ label, value string }{"Provider", provider})
 	}
 	if prompt := stringPtrValue(report.FirstPrompt); prompt != "" {
+		if !full {
+			prompt = formatSessionPrompt(prompt)
+		}
 		lines = append(lines, struct{ label, value string }{"Prompt", prompt})
 	}
 	lines = append(lines,

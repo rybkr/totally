@@ -76,11 +76,16 @@ prefix is accepted.
 ```sh
 totally show 019f44e4
 totally show --latest
+totally show 019f44e4 --full
 ```
 
 The report includes session metadata, project, first prompt/task descriptor,
 transcript location, model/provider use, prompts, turns, messages, tool calls,
 duration, token breakdown, and estimated cost.
+
+Table output shows a shortened prompt preview by default. Use `--full` to show
+the complete prompt and other untruncated display values. JSON output always
+contains the complete prompt.
 
 ## Compare usage and cost
 

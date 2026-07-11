@@ -156,6 +156,77 @@ func TestShowCommandPrintsJSONReport(t *testing.T) {
 	}
 }
 
+func TestShowCommandTruncatesPromptUnlessFull(t *testing.T) {
+	root := t.TempDir()
+	sessionID := "019f44e4-5c01-7d22-9805-50cecaefde49"
+	prompt := "  first\n\tsecond " + strings.Repeat("long ", 20)
+	escapedPrompt, err := json.Marshal(prompt)
+	if err != nil {
+		t.Fatalf("marshal prompt: %v", err)
+	}
+	contents := strings.Replace(inspectFixtureForSession(sessionID), `"Explain this session"`, string(escapedPrompt), 1)
+	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+sessionID+".jsonl", contents)
+
+	for _, test := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "default",
+			args: []string{"show", "--home", root, sessionID},
+			want: "Prompt      " + formatSessionPrompt(prompt),
+		},
+		{
+			name: "full",
+			args: []string{"show", "--home", root, sessionID, "--full"},
+			want: "Prompt      " + strings.TrimSpace(prompt),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			cmd := newTestRootCommand(t, &stdout, &stderr)
+			cmd.SetArgs(test.args)
+
+			if err := cmd.ExecuteContext(context.Background()); err != nil {
+				t.Fatalf("run failed: %v\\nstderr: %s", err, stderr.String())
+			}
+			if !strings.Contains(stdout.String(), test.want) {
+				t.Fatalf("missing %q in output:\\n%s", test.want, stdout.String())
+			}
+		})
+	}
+}
+
+func TestShowCommandJSONKeepsFullPrompt(t *testing.T) {
+	root := t.TempDir()
+	sessionID := "019f44e4-5c01-7d22-9805-50cecaefde49"
+	prompt := "  first\n\tsecond " + strings.Repeat("long ", 20)
+	escapedPrompt, err := json.Marshal(prompt)
+	if err != nil {
+		t.Fatalf("marshal prompt: %v", err)
+	}
+	contents := strings.Replace(inspectFixtureForSession(sessionID), `"Explain this session"`, string(escapedPrompt), 1)
+	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+sessionID+".jsonl", contents)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"show", "--home", root, sessionID, "--format", "json"})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\\nstderr: %s", err, stderr.String())
+	}
+	var report showReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("invalid JSON output: %v\\n%s", err, stdout.String())
+	}
+	if report.FirstPrompt == nil || *report.FirstPrompt != strings.TrimSpace(prompt) {
+		t.Fatalf("unexpected first_prompt: %+v", report.FirstPrompt)
+	}
+}
+
 func TestFormatShowTokenUsageMakesSubsetRelationshipsExplicit(t *testing.T) {
 	got := formatShowTokenUsage(showTokenUsageReport{
 		InputTokens:       1_043_777,
