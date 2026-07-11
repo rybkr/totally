@@ -1,127 +1,134 @@
 # Totally
 
-`totally`: a terminal utility for analyzing local agent session files.
+`totally` is a local CLI for understanding agent sessions: what you worked on,
+how much it used and cost, and where the underlying transcript lives.
 
-## Usage
-
-```sh
-go run ./cmd/totally --help
-go run ./cmd/totally files --help
-go run ./cmd/totally sessions --help
-go run ./cmd/totally inspect --help
-```
+> **Status:** This README defines the intended public CLI. The current
+> implementation is being brought into line with it.
 
 ## Commands
 
+| Command | Purpose |
+| --- | --- |
+| `totally` | Alias for `totally sessions` |
+| `totally sessions` | Find and browse sessions |
+| `totally show <session-id>` | Explain one session |
+| `totally stats` | Aggregate and compare usage and estimated cost |
+| `totally prices` | Show model pricing assumptions and rates |
+| `totally files` | Inspect raw transcript discovery and storage |
+
+## Common filters
+
+These filters apply wherever they are meaningful:
+
+```text
+--project NAME|PATH             Limit to a project
+--since TIME, --after TIME      Records at or after TIME
+--until TIME, --before TIME     Records at or before TIME
+--model MODEL                   Limit to a model
+--provider PROVIDER             Limit to a provider
+--archived                      Include archived sessions
+--limit N                       Limit listed rows
+--format table|json             Select output format (default: table)
+```
+
+`--after` is an alias for `--since`; `--before` is an alias for `--until`.
+Time values accept relative durations (`7d`), dates (`2026-07-01`), RFC3339
+timestamps, and `today`, `yesterday`, or `now`.
+
+## Data sources
+
+```text
+--agent AGENT                   Read a supported agent session format
+--home PATH                     Agent data directory; may be repeated
+--config PATH                   Configuration file path
+```
+
+By default, `totally` discovers supported local agent homes. Use `--home` to
+inspect a specific home or combine several homes in one report.
+
+## Find sessions
+
+`sessions` answers “which session was that?” Its table includes the session ID,
+project, first prompt/task descriptor, start time, model, estimated cost, and
+token use.
+
 ```sh
-totally [global flags] files [--limit N] [--latest] [--summary | --count | --paths]
-totally [global flags] sessions [--limit N] [--latest] [--summary | --ids | --paths]
-totally [global flags] inspect <session-id>
+totally sessions
+totally sessions --project totally --since 7d
+totally sessions --prompt "command set"
+totally sessions --model gpt-5 --sort cost --limit 10
 ```
 
-`files` discovers local session transcript files and prints them as a table by
-default. Use `--latest` to sort by most recently updated and print one file by
-default; combine it with `--limit N` to print the latest N files.
-Use `--summary` for storage and discovery totals, `--count` for a bare file
-count, or `--paths` for newline-delimited file paths.
-
-`sessions` parses discovered transcripts and prints one row per logical session
-with metadata, models, turn/message/tool counts, and token totals. Use
-`--latest` to sort by most recently updated and print one session by default;
-combine it with `--limit N` to print the latest N sessions. Use `--summary` for
-aggregate session totals, `--ids` for newline-delimited session IDs, or
-`--paths` for backing transcript paths.
-
-`inspect` parses one session transcript and prints a detailed, terminal-friendly
-report with metadata, models used, activity counts, and token usage. It accepts
-a full session UUID. Prefix matching may be added later, but ambiguous prefixes
-should be rejected.
-
-`inspect` intentionally does not calculate cost. Cost reporting belongs in a
-separate command where pricing source and assumptions can be explicit.
-
-Inspect exit behavior:
-
-- `0`: Session found and parsed.
-- `1`: Session ID is missing, malformed, unknown, or ambiguous.
-- `2`: Usage/configuration error, such as an invalid `--format` value.
-
-## Global Flags
+Session-specific options:
 
 ```text
---config PATH           Config file path.
---agent all|codex       Agent session format to discover. Default: all.
---home PATH             Agent home directory. May be repeated.
---archived              Include archived sessions.
---since TIME            Include sessions at or after TIME.
---until TIME            Include sessions at or before TIME.
---format table|json     Output format. Default: table.
+--prompt TEXT                   Match the first prompt/task descriptor
+--sort started|updated|cost|tokens|duration
+--latest                        Select the most recently updated session
 ```
 
-`--since` and `--until` accept:
+## Show a session
 
-- Relative durations: `24h`, `7d`, `2w`, `1y`
-- Dates: `2026-07-01`
-- RFC3339 timestamps: `2026-07-01T12:00:00Z`
+`show` answers “what happened, and what did it cost?” An unambiguous session ID
+prefix is accepted.
 
-For relative years, `1y` means 365 days.
+```sh
+totally show 019f44e4
+totally show --latest
+```
 
-## Configuration
+The report includes session metadata, project, first prompt/task descriptor,
+transcript location, model/provider use, prompts, turns, messages, tool calls,
+duration, token breakdown, estimated cost, and the pricing assumptions used.
 
-Settings are resolved in this order:
+## Compare usage and cost
+
+`stats` reports session count, prompts, tokens, estimated cost, and duration.
+Use `--by` to compare one dimension at a time.
+
+```sh
+totally stats --since 7d
+totally stats --project totally --since 30d
+totally stats --since 30d --by project
+totally stats --since 30d --by model
+totally stats --project totally --by day --pretty
+```
 
 ```text
-CLI flags > environment variables > config file > built-in defaults
+--by project|model|provider|day|week|month|session
+--pretty                        Terminal-oriented presentation and, for time
+                                groupings, an ASCII chart
 ```
 
-By default, `totally` reads `~/.config/totally/config.toml` when it exists. Use
-`--config PATH` or `TOTALLY_CONFIG` to choose a different file.
+## Pricing
 
-```toml
-agent = "all"
-home = ["~/.codex"]
-archived = false
-since = "7d"
-format = "table"
+```sh
+totally prices
+totally prices --model gpt-5
+totally prices --format json
 ```
 
-Environment variables use the `TOTALLY_` prefix:
+Pricing output shows the configured rates per million tokens for input, cached
+input, output, and reasoning, plus the source and effective date/version.
+Costs are estimates based on this local price table, not vendor invoice
+reconciliation.
 
-```text
-TOTALLY_CONFIG=/path/to/config.toml
-TOTALLY_AGENT=codex
-TOTALLY_HOME=/path/one:/path/two
-TOTALLY_ARCHIVED=true
-TOTALLY_SINCE=7d
-TOTALLY_UNTIL=2026-07-01
-TOTALLY_FORMAT=json
-```
-
-`TOTALLY_HOME` uses the platform path-list separator.
-
-## Examples
+## Raw files
 
 ```sh
 totally files
-totally files --limit 10
-totally files --latest
-totally files --latest --limit 2
-totally files --summary
-totally files --count
-totally files --paths
-totally --format json files
-totally --format json files --summary
-totally --agent codex --since 7d files
-totally --home ~/.codex --archived files
-totally sessions
-totally sessions --latest
-totally sessions --latest --limit 5
-totally sessions --summary
-totally sessions --ids
-totally sessions --paths
-totally --format json sessions
-totally --format json sessions --summary
-totally inspect 019f44e4-5c01-7d22-9805-50cecaefde49
-totally inspect 019f44e4-5c01-7d22-9805-50cecaefde49 --format json
-TOTALLY_FORMAT=json totally files --limit 5
+totally files --archived
+```
+
+`files` is a diagnostic command for transcript discovery, compression, paths,
+and storage. Use `sessions` for normal work.
+
+## Automation
+
+Terminal tables are the default. Use JSON for scripts and integrations:
+
+```sh
+totally stats --project totally --since 30d --format json
+totally sessions --since 7d --format json
 ```
