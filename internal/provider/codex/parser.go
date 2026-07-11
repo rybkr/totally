@@ -218,22 +218,7 @@ func addUsageSegment(record *session.Record, provider, model string, usage sessi
 	if model == "" || usage == (session.TokenUsage{}) {
 		return
 	}
-	for i := range record.UsageSegments {
-		segment := &record.UsageSegments[i]
-		if segment.Provider == provider && segment.Model == model {
-			addTokenUsage(&segment.TokenUsage, usage)
-			return
-		}
-	}
 	record.UsageSegments = append(record.UsageSegments, session.UsageSegment{Provider: provider, Model: model, TokenUsage: usage})
-}
-
-func addTokenUsage(total *session.TokenUsage, usage session.TokenUsage) {
-	total.InputTokens += usage.InputTokens
-	total.CachedInputTokens += usage.CachedInputTokens
-	total.OutputTokens += usage.OutputTokens
-	total.ReasoningOutputTokens += usage.ReasoningOutputTokens
-	total.TotalTokens += usage.TotalTokens
 }
 
 func applyResponseItem(payload json.RawMessage, record *session.Record) error {

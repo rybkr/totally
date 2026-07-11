@@ -113,6 +113,21 @@ func TestParserAttributesIncrementalUsageAcrossModels(t *testing.T) {
 	}
 }
 
+func TestParserPreservesRequestsUsingTheSameModel(t *testing.T) {
+	path := writeRolloutJSONL(t, `{"type":"session_meta","payload":{"model_provider":"openai"}}
+{"type":"turn_context","payload":{"model":"gpt-5"}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10}}}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":20}}}}
+`)
+	record, err := NewParser().ParseSession(context.Background(), session.FileRef{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(record.UsageSegments) != 2 || record.UsageSegments[0].TokenUsage.InputTokens != 10 || record.UsageSegments[1].TokenUsage.InputTokens != 20 {
+		t.Fatalf("requests were not preserved: %+v", record.UsageSegments)
+	}
+}
+
 func TestParserParseCompressedSession(t *testing.T) {
 	path := writeCompressedRollout(t, rolloutFixture())
 

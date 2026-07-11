@@ -37,7 +37,7 @@ type Record struct {
 	UsageSegments []UsageSegment `json:"usage_segments"`
 }
 
-// UsageSegment attributes incremental token usage to one provider and model.
+// UsageSegment attributes one request's incremental token usage to a provider and model.
 type UsageSegment struct {
 	Provider   string     `json:"provider"`
 	Model      string     `json:"model"`

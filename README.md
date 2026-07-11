@@ -133,6 +133,12 @@ be attributed to a priced model, `show` reports the estimate as unavailable or
 partial rather than treating it as zero. JSON includes the structured `cost`
 object and retains `cost_usd` as a compatibility field.
 
+The bundled catalog also records conditional long-context multipliers. They are
+applied per request when a model charges more above its input-token threshold.
+GPT-5.6 cache writes carry an additional surcharge, but Codex transcripts do
+not currently distinguish cache-write tokens; estimates for those models are
+therefore marked `partial` and include that limitation in JSON.
+
 ## Raw files
 
 ```sh

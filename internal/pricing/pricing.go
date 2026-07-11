@@ -25,6 +25,10 @@ type Rate struct {
 	OutputPerMillionUSD      string `json:"output_per_million_usd" mapstructure:"output_per_million_usd"`
 	Source                   string `json:"source" mapstructure:"source"`
 	EffectiveFrom            string `json:"effective_from" mapstructure:"effective_from"`
+	LongContextThreshold     int64  `json:"long_context_threshold,omitempty" mapstructure:"long_context_threshold"`
+	LongContextInputScale    string `json:"long_context_input_scale,omitempty" mapstructure:"long_context_input_scale"`
+	LongContextOutputScale   string `json:"long_context_output_scale,omitempty" mapstructure:"long_context_output_scale"`
+	CacheWriteInputScale     string `json:"cache_write_input_scale,omitempty" mapstructure:"cache_write_input_scale"`
 }
 
 type MissingRate struct {
@@ -47,14 +51,218 @@ type Estimate struct {
 	PricingVersion string        `json:"pricing_version"`
 	Components     []Component   `json:"components,omitempty"`
 	Missing        []MissingRate `json:"missing,omitempty"`
+	Limitations    []string      `json:"limitations,omitempty"`
 }
 
 type Catalog struct{ rates []Rate }
 
 func DefaultCatalog() Catalog {
 	return Catalog{rates: []Rate{
-		{Provider: "openai", Model: "gpt-5", InputPerMillionUSD: "1.25", CachedInputPerMillionUSD: "0.125", OutputPerMillionUSD: "10.00", Source: "https://developers.openai.com/api/docs/models/gpt-5", EffectiveFrom: "2025-08-07"},
-		{Provider: "openai", Model: "gpt-5-mini", InputPerMillionUSD: "0.25", CachedInputPerMillionUSD: "0.025", OutputPerMillionUSD: "2.00", Source: "https://developers.openai.com/api/docs/models/gpt-5-mini", EffectiveFrom: "2025-08-07"},
+		{
+			Provider:                 "openai",
+			Model:                    "codex-mini-latest",
+			InputPerMillionUSD:       "1.50",
+			CachedInputPerMillionUSD: "0.375",
+			OutputPerMillionUSD:      "6.00",
+			Source:                   "https://developers.openai.com/api/docs/models/codex-mini-latest",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-4.1",
+			InputPerMillionUSD:       "2.00",
+			CachedInputPerMillionUSD: "0.50",
+			OutputPerMillionUSD:      "8.00",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-4.1",
+			EffectiveFrom:            "2025-04-14",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-4.1-mini",
+			InputPerMillionUSD:       "0.40",
+			CachedInputPerMillionUSD: "0.10",
+			OutputPerMillionUSD:      "1.60",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-4.1-mini",
+			EffectiveFrom:            "2025-04-14",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-4.1-nano",
+			InputPerMillionUSD:       "0.10",
+			CachedInputPerMillionUSD: "0.025",
+			OutputPerMillionUSD:      "0.40",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-4.1-nano",
+			EffectiveFrom:            "2025-04-14",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-5",
+			InputPerMillionUSD:       "1.25",
+			CachedInputPerMillionUSD: "0.125",
+			OutputPerMillionUSD:      "10.00",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-5",
+			EffectiveFrom:            "2025-08-07",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-5-mini",
+			InputPerMillionUSD:       "0.25",
+			CachedInputPerMillionUSD: "0.025",
+			OutputPerMillionUSD:      "2.00",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-5-mini",
+			EffectiveFrom:            "2025-08-07",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-5-nano",
+			InputPerMillionUSD:       "0.05",
+			CachedInputPerMillionUSD: "0.005",
+			OutputPerMillionUSD:      "0.40",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-5-nano",
+			EffectiveFrom:            "2025-08-07",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-5-codex",
+			InputPerMillionUSD:       "1.25",
+			CachedInputPerMillionUSD: "0.125",
+			OutputPerMillionUSD:      "10.00",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-5-codex",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-5.1",
+			InputPerMillionUSD:       "1.25",
+			CachedInputPerMillionUSD: "0.125",
+			OutputPerMillionUSD:      "10.00",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-5.1",
+			EffectiveFrom:            "2025-11-13",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-5.1-codex",
+			InputPerMillionUSD:       "1.25",
+			CachedInputPerMillionUSD: "0.125",
+			OutputPerMillionUSD:      "10.00",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-5.1-codex",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-5.1-codex-max",
+			InputPerMillionUSD:       "1.25",
+			CachedInputPerMillionUSD: "0.125",
+			OutputPerMillionUSD:      "10.00",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-5.1-codex-max",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-5.1-codex-mini",
+			InputPerMillionUSD:       "0.25",
+			CachedInputPerMillionUSD: "0.025",
+			OutputPerMillionUSD:      "2.00",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-5.1-codex-mini",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-5.2",
+			InputPerMillionUSD:       "1.75",
+			CachedInputPerMillionUSD: "0.175",
+			OutputPerMillionUSD:      "14.00",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-5.2",
+			EffectiveFrom:            "2025-12-11",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-5.2-codex",
+			InputPerMillionUSD:       "1.75",
+			CachedInputPerMillionUSD: "0.175",
+			OutputPerMillionUSD:      "14.00",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-5.2-codex",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-5.3-codex",
+			InputPerMillionUSD:       "1.75",
+			CachedInputPerMillionUSD: "0.175",
+			OutputPerMillionUSD:      "14.00",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-5.3-codex",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-5.4",
+			InputPerMillionUSD:       "2.50",
+			CachedInputPerMillionUSD: "0.25",
+			OutputPerMillionUSD:      "15.00",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-5.4",
+			EffectiveFrom:            "2026-03-05",
+			LongContextThreshold:     272_000,
+			LongContextInputScale:    "2",
+			LongContextOutputScale:   "1.5",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-5.5",
+			InputPerMillionUSD:       "5.00",
+			CachedInputPerMillionUSD: "0.50",
+			OutputPerMillionUSD:      "30.00",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-5.5",
+			EffectiveFrom:            "2026-04-23",
+			LongContextThreshold:     272_000,
+			LongContextInputScale:    "2",
+			LongContextOutputScale:   "1.5",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-5.6-sol",
+			InputPerMillionUSD:       "5.00",
+			CachedInputPerMillionUSD: "0.50",
+			OutputPerMillionUSD:      "30.00",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-5.6-sol",
+			LongContextThreshold:     272_000,
+			LongContextInputScale:    "2",
+			LongContextOutputScale:   "1.5",
+			CacheWriteInputScale:     "1.25",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-5.6-terra",
+			InputPerMillionUSD:       "2.50",
+			CachedInputPerMillionUSD: "0.25",
+			OutputPerMillionUSD:      "15.00",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-5.6-terra",
+			LongContextThreshold:     272_000,
+			LongContextInputScale:    "2",
+			LongContextOutputScale:   "1.5",
+			CacheWriteInputScale:     "1.25",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "gpt-5.6-luna",
+			InputPerMillionUSD:       "1.00",
+			CachedInputPerMillionUSD: "0.10",
+			OutputPerMillionUSD:      "6.00",
+			Source:                   "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
+			LongContextThreshold:     272_000,
+			LongContextInputScale:    "2",
+			LongContextOutputScale:   "1.5",
+			CacheWriteInputScale:     "1.25",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "o3",
+			InputPerMillionUSD:       "2.00",
+			CachedInputPerMillionUSD: "0.50",
+			OutputPerMillionUSD:      "8.00",
+			Source:                   "https://developers.openai.com/api/docs/models/o3",
+			EffectiveFrom:            "2025-04-16",
+		},
+		{
+			Provider:                 "openai",
+			Model:                    "o4-mini",
+			InputPerMillionUSD:       "1.10",
+			CachedInputPerMillionUSD: "0.275",
+			OutputPerMillionUSD:      "4.40",
+			Source:                   "https://developers.openai.com/api/docs/models/o4-mini",
+		},
 	}}
 }
 
@@ -102,6 +310,9 @@ func (c Catalog) Estimate(segments []session.UsageSegment, at time.Time) Estimat
 		}
 		total += amount
 		result.Components = append(result.Components, Component{Provider: segment.Provider, Model: segment.Model, TokenUsage: segment.TokenUsage, AmountUSD: formatNanos(amount)})
+		if rate.CacheWriteInputScale != "" {
+			addUniqueString(&result.Limitations, "cache-write tokens are not identified in the session transcript; any cache-write surcharge is excluded")
+		}
 	}
 	if len(result.Components) > 0 {
 		amount := formatNanos(total)
@@ -110,8 +321,20 @@ func (c Catalog) Estimate(segments []session.UsageSegment, at time.Time) Estimat
 		if len(result.Missing) > 0 {
 			result.Status = "partial"
 		}
+		if len(result.Limitations) > 0 {
+			result.Status = "partial"
+		}
 	}
 	return result
+}
+
+func addUniqueString(values *[]string, value string) {
+	for _, existing := range *values {
+		if existing == value {
+			return
+		}
+	}
+	*values = append(*values, value)
 }
 
 func (c Catalog) lookup(provider, model string, at time.Time) (Rate, bool) {
@@ -156,8 +379,33 @@ func costNanos(usage session.TokenUsage, rate Rate) (int64, error) {
 	if uncached < 0 {
 		uncached = 0
 	}
-	numerator := uncached*parsed.input + usage.CachedInputTokens*parsed.cached + usage.OutputTokens*parsed.output
+	inputScale, outputScale := int64(1_000), int64(1_000)
+	if rate.LongContextThreshold > 0 && usage.InputTokens > rate.LongContextThreshold {
+		var err error
+		inputScale, err = parseScale(rate.LongContextInputScale)
+		if err != nil {
+			return 0, err
+		}
+		outputScale, err = parseScale(rate.LongContextOutputScale)
+		if err != nil {
+			return 0, err
+		}
+	}
+	inputCost := (uncached*parsed.input + usage.CachedInputTokens*parsed.cached) * inputScale / 1_000
+	outputCost := usage.OutputTokens * parsed.output * outputScale / 1_000
+	numerator := inputCost + outputCost
 	return (numerator + tokensPerRate/2) / tokensPerRate, nil
+}
+
+func parseScale(text string) (int64, error) {
+	if text == "" {
+		return 1_000, nil
+	}
+	nanos, err := parseUSDNanos(text)
+	if err != nil {
+		return 0, fmt.Errorf("invalid pricing scale %q: %w", text, err)
+	}
+	return nanos / 1_000_000, nil
 }
 
 func parseUSDNanos(text string) (int64, error) {
