@@ -36,38 +36,70 @@ type inspectSummary struct {
 	TokenUsage session.TokenUsage
 }
 
+type showOptions struct {
+	latest bool
+}
+
 func newShowCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
+	var opts showOptions
+
 	cmd := &cobra.Command{
-		Use:   "show <session-id>",
+		Use:   "show <session-id> | --latest",
 		Short: "Show a detailed, single-session report",
-		Args:  cobra.ExactArgs(1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			if opts.latest {
+				if len(args) != 0 {
+					return fmt.Errorf("--latest does not accept a session ID")
+				}
+				return nil
+			}
+			return cobra.ExactArgs(1)(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runShow(cmd, stdout, *globals, args)
+			return runShow(cmd, stdout, *globals, opts, args)
 		},
 	}
+	cmd.Flags().BoolVar(&opts.latest, "latest", false, "show the most recently updated session")
 
 	return cmd
 }
 
-func runShow(cmd *cobra.Command, stdout io.Writer, globals globalOptions, args []string) error {
+func runShow(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts showOptions, args []string) error {
 	parsers, err := globals.parsers()
 	if err != nil {
 		return err
 	}
 
-	file, err := resolveShowSessionID(cmd, globals, args[0])
-	if err != nil {
-		return err
-	}
+	var record session.Record
+	if opts.latest {
+		files, err := discoverSessionFiles(cmd, globals)
+		if err != nil {
+			return err
+		}
+		records, err := parseSessionFilesWithParsers(cmd, parsers, files)
+		if err != nil {
+			return err
+		}
+		if len(records) == 0 {
+			return fmt.Errorf("no sessions found")
+		}
+		sortRecordsByUpdated(records)
+		record = records[0]
+	} else {
+		file, err := resolveShowSessionID(cmd, globals, args[0])
+		if err != nil {
+			return err
+		}
 
-	parser, err := parserForSource(parsers, file.Source)
-	if err != nil {
-		return err
-	}
+		parser, err := parserForSource(parsers, file.Source)
+		if err != nil {
+			return err
+		}
 
-	record, err := parser.ParseSession(cmd.Context(), file)
-	if err != nil {
-		return err
+		record, err = parser.ParseSession(cmd.Context(), file)
+		if err != nil {
+			return err
+		}
 	}
 
 	report := newShowReport(record)

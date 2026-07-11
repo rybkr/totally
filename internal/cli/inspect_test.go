@@ -40,6 +40,26 @@ func TestShowCommandPrintsSingleSessionReport(t *testing.T) {
 	}
 }
 
+func TestShowCommandPrintsMostRecentlyUpdatedSession(t *testing.T) {
+	root := t.TempDir()
+	olderID := "019f44e4-5c01-7d22-9805-50cecaefde49"
+	latestID := "019f44e4-5c01-7d22-9805-50cecaefde50"
+	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+olderID+".jsonl", inspectFixtureForSessionAt(olderID, time.Date(2026, 7, 8, 3, 20, 44, 0, time.UTC)))
+	writeRolloutContents(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-"+latestID+".jsonl", inspectFixtureForSessionAt(latestID, time.Date(2026, 7, 9, 3, 20, 44, 0, time.UTC)))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"show", "--home", root, "--latest"})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Session     "+latestID) {
+		t.Fatalf("expected latest session %q, got:\n%s", latestID, stdout.String())
+	}
+}
+
 func TestShowCommandPrintsJSONReport(t *testing.T) {
 	root := t.TempDir()
 	sessionID := "019f44e4-5c01-7d22-9805-50cecaefde49"
