@@ -37,6 +37,23 @@ func TestFilesCommandPrintsDiscoveredFiles(t *testing.T) {
 	}
 }
 
+func TestFilesCommandNoPagerPrintsTableDirectly(t *testing.T) {
+	root := t.TempDir()
+	writeRollout(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"--no-pager", "files", "--home", root})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "SOURCE\tROLE\tFORMAT\tSESSION\tCREATED\tUPDATED\tSIZE\tPATH") {
+		t.Fatalf("expected direct table output, got:\n%s", stdout.String())
+	}
+}
+
 func TestFilesCommandPrintsPaths(t *testing.T) {
 	root := t.TempDir()
 	path := writeRollout(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl")

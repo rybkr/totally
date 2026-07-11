@@ -93,12 +93,12 @@ func runSessions(cmd *cobra.Command, stdout io.Writer, globals globalOptions, op
 
 	switch globals.format {
 	case outputFormatTable:
-		if shouldPageSessions(stdout, globals.noPager) {
+		if shouldPageTable(stdout, globals.noPager) {
 			var table bytes.Buffer
 			if err := printSessionsTable(&table, records); err != nil {
 				return err
 			}
-			return pageSessionsOutput(cmd, stdout, table.Bytes())
+			return pageTableOutput(cmd, stdout, table.Bytes())
 		}
 		return printSessionsTable(stdout, records)
 	case outputFormatJSON:
@@ -108,7 +108,7 @@ func runSessions(cmd *cobra.Command, stdout io.Writer, globals globalOptions, op
 	}
 }
 
-func shouldPageSessions(stdout io.Writer, noPager bool) bool {
+func shouldPageTable(stdout io.Writer, noPager bool) bool {
 	if noPager {
 		return false
 	}
@@ -120,7 +120,7 @@ func shouldPageSessions(stdout io.Writer, noPager bool) bool {
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
-func pageSessionsOutput(cmd *cobra.Command, stdout io.Writer, output []byte) error {
+func pageTableOutput(cmd *cobra.Command, stdout io.Writer, output []byte) error {
 	args := strings.Fields(os.Getenv("PAGER"))
 	if len(args) == 0 {
 		args = []string{"less", "-FRX"}

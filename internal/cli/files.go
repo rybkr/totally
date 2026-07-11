@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -100,6 +101,13 @@ func runFiles(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts 
 
 	switch globals.format {
 	case outputFormatTable:
+		if shouldPageTable(stdout, globals.noPager) {
+			var table bytes.Buffer
+			if err := printFilesTable(&table, files); err != nil {
+				return err
+			}
+			return pageTableOutput(cmd, stdout, table.Bytes())
+		}
 		return printFilesTable(stdout, files)
 	case outputFormatJSON:
 		return json.NewEncoder(stdout).Encode(files)
