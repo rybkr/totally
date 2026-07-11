@@ -13,34 +13,34 @@ type Parser interface {
 
 // Record is a provider-neutral summary of a parsed agent session.
 type Record struct {
-	Source Source
+	Source Source `json:"source"`
 
-	SessionID string
-	Path      string
-	Format    FileFormat
+	SessionID string     `json:"session_id"`
+	Path      string     `json:"path"`
+	Format    FileFormat `json:"format"`
 
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	SizeBytes int64
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	SizeBytes int64     `json:"size_bytes"`
 
-	CWD         string
-	Models      []string
-	Provider    string
-	CLIVersion  string
-	FirstPrompt string
+	CWD         string   `json:"cwd"`
+	Models      []string `json:"models"`
+	Provider    string   `json:"provider"`
+	CLIVersion  string   `json:"cli_version"`
+	FirstPrompt string   `json:"first_prompt"`
 
-	Turns     int
-	Messages  int
-	ToolCalls int
+	Turns     int `json:"turns"`
+	Messages  int `json:"messages"`
+	ToolCalls int `json:"tool_calls"`
 
-	TokenUsage TokenUsage
+	TokenUsage TokenUsage `json:"token_usage"`
 }
 
 // TokenUsage captures the token counters exposed by an agent session format.
 type TokenUsage struct {
-	InputTokens           int64
-	CachedInputTokens     int64
-	OutputTokens          int64
-	ReasoningOutputTokens int64
-	TotalTokens           int64
+	InputTokens           int64 `json:"input_tokens"`
+	CachedInputTokens     int64 `json:"cached_input_tokens"`
+	OutputTokens          int64 `json:"output_tokens"`
+	ReasoningOutputTokens int64 `json:"reasoning_output_tokens"`
+	TotalTokens           int64 `json:"total_tokens"`
 }

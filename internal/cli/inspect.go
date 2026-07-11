@@ -16,24 +16,24 @@ import (
 var sessionIDPrefixPattern = regexp.MustCompile(`^[0-9a-fA-F-]+$`)
 
 type inspectSummary struct {
-	Sessions int
-	Sources  []string
+	Sessions int      `json:"sessions"`
+	Sources  []string `json:"sources"`
 
-	CreatedStart string
-	CreatedEnd   string
-	UpdatedStart string
-	UpdatedEnd   string
+	CreatedStart string `json:"created_start"`
+	CreatedEnd   string `json:"created_end"`
+	UpdatedStart string `json:"updated_start"`
+	UpdatedEnd   string `json:"updated_end"`
 
-	CWDs        []string
-	Models      []string
-	Providers   []string
-	CLIVersions []string
+	CWDs        []string `json:"cwds"`
+	Models      []string `json:"models"`
+	Providers   []string `json:"providers"`
+	CLIVersions []string `json:"cli_versions"`
 
-	Turns     int
-	Messages  int
-	ToolCalls int
+	Turns     int `json:"turns"`
+	Messages  int `json:"messages"`
+	ToolCalls int `json:"tool_calls"`
 
-	TokenUsage session.TokenUsage
+	TokenUsage session.TokenUsage `json:"token_usage"`
 }
 
 type showOptions struct {
@@ -193,7 +193,7 @@ type showTokenUsageReport struct {
 	InputTokens       int64 `json:"input_tokens"`
 	CachedInputTokens int64 `json:"cached_input_tokens"`
 	OutputTokens      int64 `json:"output_tokens"`
-	ReasoningTokens   int64 `json:"reasoning_tokens"`
+	ReasoningTokens   int64 `json:"reasoning_output_tokens"`
 	TotalTokens       int64 `json:"total_tokens"`
 }
 

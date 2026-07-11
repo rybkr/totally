@@ -111,6 +111,16 @@ func TestShowCommandPrintsJSONReport(t *testing.T) {
 	if _, found := fields["status"]; found {
 		t.Fatalf("status must not be present in JSON output: %s", stdout.String())
 	}
+	var tokenUsage map[string]json.RawMessage
+	if err := json.Unmarshal(fields["token_usage"], &tokenUsage); err != nil {
+		t.Fatalf("invalid token_usage object: %v", err)
+	}
+	if _, found := tokenUsage["reasoning_output_tokens"]; !found {
+		t.Fatalf("missing reasoning_output_tokens: %s", stdout.String())
+	}
+	if _, found := tokenUsage["reasoning_tokens"]; found {
+		t.Fatalf("unexpected legacy reasoning_tokens key: %s", stdout.String())
+	}
 	if report.SessionID != sessionID {
 		t.Fatalf("unexpected session ID: %s", report.SessionID)
 	}

@@ -89,6 +89,23 @@ func TestSessionsCommandPrintsJSON(t *testing.T) {
 	if records[0].TokenUsage.TotalTokens != 125 {
 		t.Fatalf("unexpected tokens: %d", records[0].TokenUsage.TotalTokens)
 	}
+	var document []map[string]json.RawMessage
+	if err := json.Unmarshal(stdout.Bytes(), &document); err != nil {
+		t.Fatalf("invalid JSON document: %v", err)
+	}
+	if _, ok := document[0]["SessionID"]; ok {
+		t.Fatalf("unexpected Go-style JSON key: %s", stdout.String())
+	}
+	if _, ok := document[0]["session_id"]; !ok {
+		t.Fatalf("missing session_id: %s", stdout.String())
+	}
+	var usage map[string]json.RawMessage
+	if err := json.Unmarshal(document[0]["token_usage"], &usage); err != nil {
+		t.Fatalf("invalid token_usage: %v", err)
+	}
+	if _, ok := usage["reasoning_output_tokens"]; !ok {
+		t.Fatalf("missing reasoning_output_tokens: %s", stdout.String())
+	}
 }
 
 func TestSessionsCommandSkipsMalformedTranscript(t *testing.T) {
@@ -209,6 +226,16 @@ func TestSessionsCommandPrintsSummaryJSON(t *testing.T) {
 	}
 	if summary.TokenUsage.TotalTokens != 125 {
 		t.Fatalf("unexpected total tokens: %d", summary.TokenUsage.TotalTokens)
+	}
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(stdout.Bytes(), &document); err != nil {
+		t.Fatalf("invalid JSON document: %v", err)
+	}
+	if _, ok := document["TokenUsage"]; ok {
+		t.Fatalf("unexpected Go-style JSON key: %s", stdout.String())
+	}
+	if _, ok := document["token_usage"]; !ok {
+		t.Fatalf("missing token_usage: %s", stdout.String())
 	}
 }
 

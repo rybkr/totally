@@ -35,17 +35,17 @@ type FindOptions struct {
 
 // FileRef is a provider-neutral reference to a local session file.
 type FileRef struct {
-	Source Source
-	Role   FileRole
-	Format FileFormat
+	Source Source     `json:"source"`
+	Role   FileRole   `json:"role"`
+	Format FileFormat `json:"format"`
 
-	Path       string
-	Compressed bool
+	Path       string `json:"path"`
+	Compressed bool   `json:"compressed"`
 
-	SessionID string
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	SizeBytes int64
+	SessionID string    `json:"session_id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	SizeBytes int64     `json:"size_bytes"`
 }
 
 // Finder discovers local files that may contain agent session data.

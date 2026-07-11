@@ -186,6 +186,18 @@ func TestFilesCommandPrintsJSON(t *testing.T) {
 	if files[0].SessionID != "019f44e4-5c01-7d22-9805-50cecaefde49" {
 		t.Fatalf("unexpected session ID: %s", files[0].SessionID)
 	}
+	var document []map[string]json.RawMessage
+	if err := json.Unmarshal(stdout.Bytes(), &document); err != nil {
+		t.Fatalf("invalid JSON document: %v", err)
+	}
+	if _, ok := document[0]["SessionID"]; ok {
+		t.Fatalf("unexpected Go-style JSON key: %s", stdout.String())
+	}
+	for _, key := range []string{"session_id", "created_at", "size_bytes"} {
+		if _, ok := document[0][key]; !ok {
+			t.Fatalf("missing %s: %s", key, stdout.String())
+		}
+	}
 }
 
 func TestFilesCommandDefaultsToAllAgents(t *testing.T) {
