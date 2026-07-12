@@ -37,6 +37,48 @@ func TestFilesCommandPrintsDiscoveredFiles(t *testing.T) {
 	}
 }
 
+func TestFilesVerifyReportsInvalidTokenUsage(t *testing.T) {
+	root := t.TempDir()
+	path := writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl", `{"type":"session_meta","payload":{"session_id":"test-session","model_provider":"openai"}}
+{"type":"turn_context","payload":{"model":"gpt-5"}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":11,"output_tokens":2,"total_tokens":11},"last_token_usage":{"input_tokens":10,"cached_input_tokens":11,"output_tokens":2,"total_tokens":11}}}}
+`)
+
+	var stdout, stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"files", "verify", path, "--format", "json"})
+	err := cmd.ExecuteContext(context.Background())
+	if err == nil || err.Error() != "transcript verification failed" {
+		t.Fatalf("expected verification failure, got %v", err)
+	}
+	var report filesVerifyReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("invalid verify JSON: %v", err)
+	}
+	if report.Valid || report.FilesChecked != 1 || len(report.Issues) != 4 {
+		t.Fatalf("unexpected report: %+v", report)
+	}
+	if report.Issues[0].Path != path || report.Issues[0].SessionID != "test-session" {
+		t.Fatalf("issue does not identify transcript: %+v", report.Issues[0])
+	}
+}
+
+func TestFilesVerifyAcceptsTotalOnlyUsage(t *testing.T) {
+	root := t.TempDir()
+	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl", `{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":5003},"last_token_usage":{"total_tokens":5003}}}}
+`)
+
+	var stdout, stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"files", "verify", "--home", root})
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("verification failed: %v", err)
+	}
+	if got := strings.TrimSpace(stdout.String()); got != "Verified 1 transcript(s): valid." {
+		t.Fatalf("unexpected output %q", got)
+	}
+}
+
 func TestFilesCommandNoPagerPrintsTableDirectly(t *testing.T) {
 	root := t.TempDir()
 	writeRollout(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl")

@@ -52,6 +52,7 @@ func newFilesCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.summary, "summary", false, "print a storage and discovery summary")
 	cmd.Flags().BoolVar(&opts.count, "count", false, "print only the number of discovered files")
 	cmd.Flags().BoolVar(&opts.paths, "paths", false, "print only discovered file paths")
+	cmd.AddCommand(newFilesVerifyCommand(stdout, globals))
 
 	return cmd
 }

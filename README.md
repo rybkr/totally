@@ -180,10 +180,21 @@ output shows the half-range as `±`, and JSON includes the explicit bounds.
 ```sh
 totally files
 totally files --archived
+totally files verify
+totally files verify ~/.codex/sessions/.../rollout-*.jsonl
+totally files verify --format json
 ```
 
 `files` is a diagnostic command for transcript discovery, compression, paths,
 and storage. Use `sessions` for normal work.
+
+`totally files verify` parses raw transcripts and reports malformed files plus
+impossible token counters, including negative values, cached input larger than
+input, and a full input/output breakdown whose total does not match. With no
+paths it verifies discovered files; provide one or more `.jsonl` or `.jsonl.zst`
+paths to verify those files directly. It exits non-zero when it finds an issue.
+Total-only telemetry remains valid because it lacks the billable breakdown
+needed to check that relationship.
 
 ## Automation
 
