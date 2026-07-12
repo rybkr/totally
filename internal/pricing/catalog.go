@@ -122,6 +122,8 @@ func mustLoadBundledCatalog() struct {
 						rate.LongContextCachedInputScale = target.Multiplier
 					case "output_tokens":
 						rate.LongContextOutputScale = target.Multiplier
+					default:
+						panic(fmt.Sprintf("pricing: unsupported adjustment target %q in %q", target.Meter, name))
 					}
 				}
 			}
@@ -212,7 +214,7 @@ func validateBundledCard(name string, card bundledCard) error {
 				return fmt.Errorf("invalid adjustment in %q", name)
 			}
 			for _, target := range adjustment.Targets {
-				if !meters[target.Meter] || adjusted[target.Meter] {
+				if !longContextTargetMeter(target.Meter) || !meters[target.Meter] || adjusted[target.Meter] {
 					return fmt.Errorf("invalid adjustment target %q in %q", target.Meter, name)
 				}
 				adjusted[target.Meter] = true
@@ -242,6 +244,10 @@ func mustCatalogDate(value string) time.Time {
 
 func knownBundledMeter(meter string) bool {
 	return meter == "input_tokens" || meter == "cached_input_tokens" || meter == "output_tokens" || meter == "cache_write_tokens"
+}
+
+func longContextTargetMeter(meter string) bool {
+	return meter == "input_tokens" || meter == "cached_input_tokens" || meter == "output_tokens"
 }
 
 func decodeBundledTOML[T any](name string) T {

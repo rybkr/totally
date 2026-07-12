@@ -75,7 +75,7 @@ func TestLookupHonorsEffectiveUntil(t *testing.T) {
 func TestEstimateAppliesLongContextPricingPerRequest(t *testing.T) {
 	catalog := Catalog{}
 	if err := catalog.Override(Rate{
-		Provider: "test", Model: "long", InputPerMillionUSD: "1", CachedInputPerMillionUSD: "0.1", OutputPerMillionUSD: "2",
+		Provider: "test", Model: "long", EffectiveFrom: "2020-01-01", InputPerMillionUSD: "1", CachedInputPerMillionUSD: "0.1", OutputPerMillionUSD: "2",
 		LongContextThreshold: 272_000, LongContextInputScale: "2", LongContextOutputScale: "1.5",
 	}); err != nil {
 		t.Fatal(err)
@@ -93,7 +93,7 @@ func TestEstimateAppliesLongContextPricingPerRequest(t *testing.T) {
 func TestEstimateMarksUnknownCacheWriteSurchargePartial(t *testing.T) {
 	catalog := Catalog{}
 	if err := catalog.Override(Rate{
-		Provider: "test", Model: "writes", InputPerMillionUSD: "1", CachedInputPerMillionUSD: "0.1", OutputPerMillionUSD: "2", CacheWriteInputScale: "1.25",
+		Provider: "test", Model: "writes", EffectiveFrom: "2020-01-01", InputPerMillionUSD: "1", CachedInputPerMillionUSD: "0.1", OutputPerMillionUSD: "2", CacheWriteInputScale: "1.25",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestEstimateMarksUnknownCacheWriteSurchargePartial(t *testing.T) {
 
 func TestEstimateDoesNotDoubleChargeCachedOrReasoningTokens(t *testing.T) {
 	catalog := Catalog{}
-	err := catalog.Override(Rate{Provider: "test", Model: "model", InputPerMillionUSD: "2", CachedInputPerMillionUSD: "1", OutputPerMillionUSD: "4"})
+	err := catalog.Override(Rate{Provider: "test", Model: "model", EffectiveFrom: "2020-01-01", InputPerMillionUSD: "2", CachedInputPerMillionUSD: "1", OutputPerMillionUSD: "4"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestEstimateDoesNotDoubleChargeCachedOrReasoningTokens(t *testing.T) {
 
 func TestEstimateReportsPartialAndUnavailablePricing(t *testing.T) {
 	catalog := Catalog{}
-	if err := catalog.Override(Rate{Provider: "test", Model: "known", InputPerMillionUSD: "1", CachedInputPerMillionUSD: "1", OutputPerMillionUSD: "1"}); err != nil {
+	if err := catalog.Override(Rate{Provider: "test", Model: "known", EffectiveFrom: "2020-01-01", InputPerMillionUSD: "1", CachedInputPerMillionUSD: "1", OutputPerMillionUSD: "1"}); err != nil {
 		t.Fatal(err)
 	}
 	estimate := catalog.Estimate([]session.UsageSegment{
@@ -145,7 +145,7 @@ func TestEstimateReportsPartialAndUnavailablePricing(t *testing.T) {
 
 func TestEstimateBoundsUsageWithOnlyTotalTokens(t *testing.T) {
 	catalog := Catalog{}
-	if err := catalog.Override(Rate{Provider: "test", Model: "known", InputPerMillionUSD: "1", CachedInputPerMillionUSD: "0.1", OutputPerMillionUSD: "2"}); err != nil {
+	if err := catalog.Override(Rate{Provider: "test", Model: "known", EffectiveFrom: "2020-01-01", InputPerMillionUSD: "1", CachedInputPerMillionUSD: "0.1", OutputPerMillionUSD: "2"}); err != nil {
 		t.Fatal(err)
 	}
 	estimate := catalog.Estimate([]session.UsageSegment{

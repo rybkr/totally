@@ -135,7 +135,9 @@ func ValidateRate(rate Rate) []ValidationIssue {
 		issues = append(issues, ValidationIssue{Field: "model", Message: "is required"})
 	}
 	var from, until time.Time
-	if rate.EffectiveFrom != "" {
+	if rate.EffectiveFrom == "" {
+		issues = append(issues, ValidationIssue{Field: "effective_from", Message: "is required"})
+	} else {
 		parsed, err := time.Parse(time.DateOnly, rate.EffectiveFrom)
 		add("effective_from", err)
 		from = parsed

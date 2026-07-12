@@ -58,6 +58,7 @@ func TestPricesVerifyReportsAllConfigIssues(t *testing.T) {
 input_per_million_usd = "1"
 cached_input_per_million_usd = "0.1"
 output_per_million_usd = "nope"
+effective_from = "2026-01-01"
 unknown = "value"
 `)
 	var stdout, stderr bytes.Buffer
@@ -80,6 +81,7 @@ func TestPricesVerifyPrintsDiagnosticOutput(t *testing.T) {
 input_per_million_usd = "invalid"
 cached_input_per_million_usd = "0.1"
 output_per_million_usd = "12"
+effective_from = "2026-01-01"
 `)
 	var stdout, stderr bytes.Buffer
 	cmd := newTestRootCommand(t, &stdout, &stderr)
@@ -92,5 +94,26 @@ output_per_million_usd = "12"
 		if !strings.Contains(output, want) {
 			t.Fatalf("missing %q in:\n%s", want, output)
 		}
+	}
+}
+
+func TestPricesVerifyRequiresEffectiveFrom(t *testing.T) {
+	config := writeConfig(t, `[prices."openai/gpt-5"]
+input_per_million_usd = "1"
+cached_input_per_million_usd = "0.1"
+output_per_million_usd = "12"
+`)
+	var stdout, stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"prices", "verify", "--config", config, "--format", "json"})
+	if err := cmd.ExecuteContext(context.Background()); err == nil {
+		t.Fatal("expected verification failure")
+	}
+	var result pricesVerifyReport
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Issues) != 1 || result.Issues[0].Path != `prices."openai/gpt-5".effective_from` {
+		t.Fatalf("unexpected verification report: %+v", result)
 	}
 }

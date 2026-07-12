@@ -89,6 +89,25 @@ func TestBundledCatalogConformsToSchema(t *testing.T) {
 	}
 }
 
+func TestValidateBundledCardRejectsCacheWriteAdjustmentTarget(t *testing.T) {
+	card := bundledCard{SchemaVersion: 1}
+	card.Model.Provider = "test"
+	card.Model.ID = "model"
+	card.Schedules = []bundledSchedule{{
+		EffectiveFrom: "2026-01-01",
+		Rates: []bundledRate{
+			{Meter: "input_tokens", Unit: "million_tokens", Price: "1"},
+			{Meter: "cached_input_tokens", Unit: "million_tokens", Price: "0.1"},
+			{Meter: "output_tokens", Unit: "million_tokens", Price: "2"},
+			{Meter: "cache_write_tokens", Unit: "million_tokens", Price: "1.25"},
+		},
+		Adjustments: []bundledAdjustment{{Kind: "threshold_multiplier", Scope: "request", Measure: "total_input_tokens", Operator: "gt", Targets: []bundledTarget{{Meter: "cache_write_tokens", Multiplier: "2"}}}},
+	}}
+	if err := validateBundledCard("test/model.toml", card); err == nil {
+		t.Fatal("expected cache-write adjustment target to be rejected")
+	}
+}
+
 func decodeTOML[T any](t *testing.T, path string) T {
 	t.Helper()
 	data, err := os.ReadFile(path)
