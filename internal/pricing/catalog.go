@@ -1,46 +1,141 @@
 package pricing
 
-const openAIModelSourcePrefix = "https://developers.openai.com/api/docs/models/"
+import (
+	"bytes"
+	"embed"
+	"fmt"
+	"path"
 
-// defaultCatalogRates contains the bundled API-equivalent price schedule.
-// Keep this data separate from estimation logic: model pricing changes over
-// time and will eventually need multiple dated entries per model.
-func defaultCatalogRates() []Rate {
-	rate := func(model, input, cached, output, effectiveFrom string) Rate {
-		return Rate{Provider: "openai", Model: model, InputPerMillionUSD: input, CachedInputPerMillionUSD: cached, OutputPerMillionUSD: output, Source: openAIModelSourcePrefix + model, EffectiveFrom: effectiveFrom}
+	"github.com/pelletier/go-toml/v2"
+)
+
+//go:embed catalogs/catalog.toml catalogs/*/*.toml
+var catalogFiles embed.FS
+
+type bundledManifest struct {
+	SchemaVersion  int      `toml:"schema_version"`
+	CatalogVersion string   `toml:"catalog_version"`
+	Files          []string `toml:"files"`
+}
+
+type bundledCard struct {
+	SchemaVersion int `toml:"schema_version"`
+	Model         struct {
+		Provider string `toml:"provider"`
+		ID       string `toml:"id"`
+	} `toml:"model"`
+	Schedules []bundledSchedule `toml:"schedules"`
+}
+
+type bundledSchedule struct {
+	EffectiveFrom  string              `toml:"effective_from"`
+	EffectiveUntil string              `toml:"effective_until"`
+	Basis          string              `toml:"basis"`
+	Currency       string              `toml:"currency"`
+	SourceURL      string              `toml:"source_url"`
+	Rates          []bundledRate       `toml:"rates"`
+	Adjustments    []bundledAdjustment `toml:"adjustments"`
+	// Provenance is retained in the TOML cards; Rate exposes the source URL.
+	SourceRetrievedAt string `toml:"source_retrieved_at"`
+	SourceArchiveURL  string `toml:"source_archive_url"`
+}
+
+type bundledRate struct {
+	Meter string `toml:"meter"`
+	Unit  string `toml:"unit"`
+	Price string `toml:"price"`
+}
+
+type bundledAdjustment struct {
+	Kind      string          `toml:"kind"`
+	Scope     string          `toml:"scope"`
+	Measure   string          `toml:"measure"`
+	Operator  string          `toml:"operator"`
+	Threshold int64           `toml:"threshold"`
+	Targets   []bundledTarget `toml:"targets"`
+}
+
+type bundledTarget struct {
+	Meter      string `toml:"meter"`
+	Multiplier string `toml:"multiplier"`
+}
+
+var loadedBundledCatalog = mustLoadBundledCatalog()
+
+func mustLoadBundledCatalog() struct {
+	version string
+	rates   []Rate
+} {
+	manifest := decodeBundledTOML[bundledManifest]("catalogs/catalog.toml")
+	if manifest.SchemaVersion != 1 || manifest.CatalogVersion == "" {
+		panic("pricing: invalid embedded catalog manifest")
 	}
-	longContext := func(model, input, cached, output, effectiveFrom string) Rate {
-		r := rate(model, input, cached, output, effectiveFrom)
-		r.LongContextThreshold, r.LongContextInputScale, r.LongContextOutputScale = 272_000, "2", "1.5"
-		return r
+	result := struct {
+		version string
+		rates   []Rate
+	}{version: manifest.CatalogVersion}
+	for _, name := range manifest.Files {
+		card := decodeBundledTOML[bundledCard](path.Join("catalogs", name))
+		if card.SchemaVersion != 1 || card.Model.Provider == "" || card.Model.ID == "" {
+			panic(fmt.Sprintf("pricing: invalid embedded model card %q", name))
+		}
+		for _, schedule := range card.Schedules {
+			if schedule.Basis != "api_equivalent" || schedule.Currency != "USD" || schedule.SourceURL == "" || schedule.SourceRetrievedAt == "" {
+				panic(fmt.Sprintf("pricing: invalid embedded schedule in %q", name))
+			}
+			rate := Rate{Provider: card.Model.Provider, Model: card.Model.ID, Source: schedule.SourceURL, EffectiveFrom: schedule.EffectiveFrom, EffectiveUntil: schedule.EffectiveUntil}
+			for _, item := range schedule.Rates {
+				if item.Unit != "million_tokens" {
+					panic(fmt.Sprintf("pricing: unsupported rate unit %q in %q", item.Unit, name))
+				}
+				switch item.Meter {
+				case "input_tokens":
+					rate.InputPerMillionUSD = item.Price
+				case "cached_input_tokens":
+					rate.CachedInputPerMillionUSD = item.Price
+				case "output_tokens":
+					rate.OutputPerMillionUSD = item.Price
+				case "cache_write_tokens":
+					rate.CacheWritePerMillionUSD = item.Price
+				default:
+					panic(fmt.Sprintf("pricing: unsupported meter %q in %q", item.Meter, name))
+				}
+			}
+			for _, adjustment := range schedule.Adjustments {
+				if adjustment.Kind != "threshold_multiplier" || adjustment.Scope != "request" || adjustment.Measure != "total_input_tokens" || adjustment.Operator != "gt" {
+					panic(fmt.Sprintf("pricing: unsupported adjustment in %q", name))
+				}
+				rate.LongContextThreshold = adjustment.Threshold
+				for _, target := range adjustment.Targets {
+					switch target.Meter {
+					case "input_tokens":
+						rate.LongContextInputScale = target.Multiplier
+					case "cached_input_tokens":
+						rate.LongContextCachedInputScale = target.Multiplier
+					case "output_tokens":
+						rate.LongContextOutputScale = target.Multiplier
+					}
+				}
+			}
+			if _, err := parseRate(rate); err != nil {
+				panic(fmt.Sprintf("pricing: invalid embedded model card %q: %v", name, err))
+			}
+			result.rates = append(result.rates, rate)
+		}
 	}
-	cacheWrite := func(model, input, cached, output string) Rate {
-		r := longContext(model, input, cached, output, "")
-		r.CacheWriteInputScale = "1.25"
-		return r
+	return result
+}
+
+func decodeBundledTOML[T any](name string) T {
+	data, err := catalogFiles.ReadFile(name)
+	if err != nil {
+		panic(fmt.Sprintf("pricing: read embedded catalog %q: %v", name, err))
 	}
-	return []Rate{
-		rate("codex-mini-latest", "1.50", "0.375", "6.00", ""),
-		rate("gpt-4.1", "2.00", "0.50", "8.00", "2025-04-14"),
-		rate("gpt-4.1-mini", "0.40", "0.10", "1.60", "2025-04-14"),
-		rate("gpt-4.1-nano", "0.10", "0.025", "0.40", "2025-04-14"),
-		rate("gpt-5", "1.25", "0.125", "10.00", "2025-08-07"),
-		rate("gpt-5-mini", "0.25", "0.025", "2.00", "2025-08-07"),
-		rate("gpt-5-nano", "0.05", "0.005", "0.40", "2025-08-07"),
-		rate("gpt-5-codex", "1.25", "0.125", "10.00", ""),
-		rate("gpt-5.1", "1.25", "0.125", "10.00", "2025-11-13"),
-		rate("gpt-5.1-codex", "1.25", "0.125", "10.00", ""),
-		rate("gpt-5.1-codex-max", "1.25", "0.125", "10.00", ""),
-		rate("gpt-5.1-codex-mini", "0.25", "0.025", "2.00", ""),
-		rate("gpt-5.2", "1.75", "0.175", "14.00", "2025-12-11"),
-		rate("gpt-5.2-codex", "1.75", "0.175", "14.00", ""),
-		rate("gpt-5.3-codex", "1.75", "0.175", "14.00", ""),
-		longContext("gpt-5.4", "2.50", "0.25", "15.00", "2026-03-05"),
-		longContext("gpt-5.5", "5.00", "0.50", "30.00", "2026-04-23"),
-		cacheWrite("gpt-5.6-sol", "5.00", "0.50", "30.00"),
-		cacheWrite("gpt-5.6-terra", "2.50", "0.25", "15.00"),
-		cacheWrite("gpt-5.6-luna", "1.00", "0.10", "6.00"),
-		rate("o3", "2.00", "0.50", "8.00", "2025-04-16"),
-		rate("o4-mini", "1.10", "0.275", "4.40", ""),
+	var value T
+	decoder := toml.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		panic(fmt.Sprintf("pricing: decode embedded catalog %q: %v", name, err))
 	}
+	return value
 }

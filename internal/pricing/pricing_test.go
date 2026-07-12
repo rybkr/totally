@@ -41,6 +41,37 @@ func TestDefaultCatalogContainsSupportedCodexAndRelatedModels(t *testing.T) {
 	}
 }
 
+func TestDefaultCatalogIsLoadedFromEmbeddedManifestAndCards(t *testing.T) {
+	manifest := decodeBundledTOML[bundledManifest]("catalogs/catalog.toml")
+	if CatalogVersion != manifest.CatalogVersion {
+		t.Fatalf("catalog version = %q, manifest version = %q", CatalogVersion, manifest.CatalogVersion)
+	}
+
+	var luna Rate
+	for _, rate := range DefaultCatalog().Rates() {
+		if rate.Provider == "openai" && rate.Model == "gpt-5.6-luna" {
+			luna = rate
+			break
+		}
+	}
+	if luna.InputPerMillionUSD != "1.00" || luna.CacheWritePerMillionUSD != "1.25" || luna.LongContextInputScale != "2" {
+		t.Fatalf("embedded gpt-5.6-luna card was not translated correctly: %+v", luna)
+	}
+}
+
+func TestLookupHonorsEffectiveUntil(t *testing.T) {
+	catalog := Catalog{rates: []Rate{{
+		Provider: "test", Model: "model", InputPerMillionUSD: "1", CachedInputPerMillionUSD: "1", OutputPerMillionUSD: "1",
+		EffectiveFrom: "2026-01-01", EffectiveUntil: "2026-02-01",
+	}}}
+	if _, ok := catalog.lookup("test", "model", time.Date(2026, time.January, 31, 0, 0, 0, 0, time.UTC)); !ok {
+		t.Fatal("rate should apply before effective_until")
+	}
+	if _, ok := catalog.lookup("test", "model", time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)); ok {
+		t.Fatal("rate should not apply at effective_until")
+	}
+}
+
 func TestEstimateAppliesLongContextPricingPerRequest(t *testing.T) {
 	catalog := Catalog{}
 	if err := catalog.Override(Rate{

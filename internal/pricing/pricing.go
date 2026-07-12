@@ -12,23 +12,27 @@ import (
 )
 
 const (
-	CatalogVersion = "2026-07-10"
-	nanosPerUSD    = int64(1_000_000_000)
-	tokensPerRate  = int64(1_000_000)
+	nanosPerUSD   = int64(1_000_000_000)
+	tokensPerRate = int64(1_000_000)
 )
 
+var CatalogVersion = loadedBundledCatalog.version
+
 type Rate struct {
-	Provider                 string `json:"provider" mapstructure:"provider"`
-	Model                    string `json:"model" mapstructure:"model"`
-	InputPerMillionUSD       string `json:"input_per_million_usd" mapstructure:"input_per_million_usd"`
-	CachedInputPerMillionUSD string `json:"cached_input_per_million_usd" mapstructure:"cached_input_per_million_usd"`
-	OutputPerMillionUSD      string `json:"output_per_million_usd" mapstructure:"output_per_million_usd"`
-	Source                   string `json:"source" mapstructure:"source"`
-	EffectiveFrom            string `json:"effective_from" mapstructure:"effective_from"`
-	LongContextThreshold     int64  `json:"long_context_threshold,omitempty" mapstructure:"long_context_threshold"`
-	LongContextInputScale    string `json:"long_context_input_scale,omitempty" mapstructure:"long_context_input_scale"`
-	LongContextOutputScale   string `json:"long_context_output_scale,omitempty" mapstructure:"long_context_output_scale"`
-	CacheWriteInputScale     string `json:"cache_write_input_scale,omitempty" mapstructure:"cache_write_input_scale"`
+	Provider                    string `json:"provider" mapstructure:"provider"`
+	Model                       string `json:"model" mapstructure:"model"`
+	InputPerMillionUSD          string `json:"input_per_million_usd" mapstructure:"input_per_million_usd"`
+	CachedInputPerMillionUSD    string `json:"cached_input_per_million_usd" mapstructure:"cached_input_per_million_usd"`
+	OutputPerMillionUSD         string `json:"output_per_million_usd" mapstructure:"output_per_million_usd"`
+	Source                      string `json:"source" mapstructure:"source"`
+	EffectiveFrom               string `json:"effective_from" mapstructure:"effective_from"`
+	EffectiveUntil              string `json:"effective_until,omitempty" mapstructure:"effective_until"`
+	LongContextThreshold        int64  `json:"long_context_threshold,omitempty" mapstructure:"long_context_threshold"`
+	LongContextInputScale       string `json:"long_context_input_scale,omitempty" mapstructure:"long_context_input_scale"`
+	LongContextCachedInputScale string `json:"long_context_cached_input_scale,omitempty" mapstructure:"long_context_cached_input_scale"`
+	LongContextOutputScale      string `json:"long_context_output_scale,omitempty" mapstructure:"long_context_output_scale"`
+	CacheWriteInputScale        string `json:"cache_write_input_scale,omitempty" mapstructure:"cache_write_input_scale"`
+	CacheWritePerMillionUSD     string `json:"cache_write_per_million_usd,omitempty" mapstructure:"cache_write_per_million_usd"`
 }
 
 type MissingRate struct {
@@ -57,7 +61,7 @@ type Estimate struct {
 type Catalog struct{ rates []Rate }
 
 func DefaultCatalog() Catalog {
-	return Catalog{rates: defaultCatalogRates()}
+	return Catalog{rates: append([]Rate(nil), loadedBundledCatalog.rates...)}
 }
 
 func (c Catalog) Rates() []Rate {
@@ -78,13 +82,13 @@ func (c *Catalog) Override(rate Rate) error {
 	if rate.Source == "" {
 		rate.Source = "user"
 	}
-	for i := range c.rates {
-		if c.rates[i].Provider == rate.Provider && c.rates[i].Model == rate.Model {
-			c.rates[i] = rate
-			return nil
+	kept := c.rates[:0]
+	for _, existing := range c.rates {
+		if existing.Provider != rate.Provider || existing.Model != rate.Model {
+			kept = append(kept, existing)
 		}
 	}
-	c.rates = append(c.rates, rate)
+	c.rates = append(kept, rate)
 	return nil
 }
 
@@ -104,7 +108,7 @@ func (c Catalog) Estimate(segments []session.UsageSegment, at time.Time) Estimat
 		}
 		total += amount
 		result.Components = append(result.Components, Component{Provider: segment.Provider, Model: segment.Model, TokenUsage: segment.TokenUsage, AmountUSD: formatNanos(amount)})
-		if rate.CacheWriteInputScale != "" {
+		if rate.CacheWriteInputScale != "" || rate.CacheWritePerMillionUSD != "" {
 			addUniqueString(&result.Limitations, "cache-write tokens are not identified in the session transcript; any cache-write surcharge is excluded")
 		}
 	}
@@ -142,6 +146,12 @@ func (c Catalog) lookup(provider, model string, at time.Time) (Rate, bool) {
 				continue
 			}
 		}
+		if rate.EffectiveUntil != "" && !at.IsZero() {
+			until, err := time.Parse(time.DateOnly, rate.EffectiveUntil)
+			if err != nil || !at.Before(until) {
+				continue
+			}
+		}
 		return rate, true
 	}
 	return Rate{}, false
@@ -173,10 +183,14 @@ func costNanos(usage session.TokenUsage, rate Rate) (int64, error) {
 	if uncached < 0 {
 		uncached = 0
 	}
-	inputScale, outputScale := int64(1_000), int64(1_000)
+	inputScale, cachedScale, outputScale := int64(1_000), int64(1_000), int64(1_000)
 	if rate.LongContextThreshold > 0 && usage.InputTokens > rate.LongContextThreshold {
 		var err error
 		inputScale, err = parseScale(rate.LongContextInputScale)
+		if err != nil {
+			return 0, err
+		}
+		cachedScale, err = parseScale(rate.LongContextCachedInputScale)
 		if err != nil {
 			return 0, err
 		}
@@ -185,7 +199,8 @@ func costNanos(usage session.TokenUsage, rate Rate) (int64, error) {
 			return 0, err
 		}
 	}
-	inputCost := (uncached*parsed.input + usage.CachedInputTokens*parsed.cached) * inputScale / 1_000
+	inputCost := uncached * parsed.input * inputScale / 1_000
+	inputCost += usage.CachedInputTokens * parsed.cached * cachedScale / 1_000
 	outputCost := usage.OutputTokens * parsed.output * outputScale / 1_000
 	numerator := inputCost + outputCost
 	return (numerator + tokensPerRate/2) / tokensPerRate, nil
