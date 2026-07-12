@@ -134,6 +134,8 @@ func TestFilesCommandPrintsCount(t *testing.T) {
 }
 
 func TestFilesCommandPrintsSummary(t *testing.T) {
+	useTestPacificTime(t)
+
 	root := t.TempDir()
 	active := writeRollout(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl")
 	archived := writeRollout(t, root, "archived_sessions/2026/07/09/rollout-2026-07-09T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde50.jsonl.zst")
@@ -163,6 +165,16 @@ func TestFilesCommandPrintsSummary(t *testing.T) {
 			t.Fatalf("missing %q in summary:\n%s", want, output)
 		}
 	}
+}
+
+func useTestPacificTime(t *testing.T) {
+	t.Helper()
+
+	original := time.Local
+	time.Local = time.FixedZone("TestPacific", -7*60*60)
+	t.Cleanup(func() {
+		time.Local = original
+	})
 }
 
 func TestFilesCommandPrintsSummaryJSON(t *testing.T) {

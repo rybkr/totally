@@ -111,6 +111,8 @@ func TestStatsCommandGroupsByCWD(t *testing.T) {
 }
 
 func TestStatsCommandGroupsByCompositeDimensions(t *testing.T) {
+	useTestPacificTime(t)
+
 	root := t.TempDir()
 	first := "019f44e4-5c01-7d22-9805-50cecaefde49"
 	second := "019f44e4-5c01-7d22-9805-50cecaefde50"
