@@ -31,7 +31,6 @@ as follows:
 4. Inspect and configure model pricing
   - A developer can inspect model prices per token/credit.
   - Users should be able to configure this information as it can change.
-  - The product should account for both subscription pricing and API pricing.
 
 5. Diagnose raw transcript discovery/storage
   - When necessary, users should be able to diagnose issues and anomalies in

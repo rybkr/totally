@@ -1,0 +1,28 @@
+# Bundled OpenAI API-equivalent price card.
+schema_version = 1
+
+[model]
+provider = "openai"
+id = "gpt-5.2"
+
+[[schedules]]
+effective_from = "2025-12-11"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://developers.openai.com/api/docs/models/gpt-5.2"
+source_retrieved_at = "2026-07-11"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "1.75"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.175"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "14.00"

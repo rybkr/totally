@@ -1,2 +1,0 @@
-- Show full UUIDs upon abmiguous collision in `totally show`
-- Truncate prompts to terminal width?
