@@ -52,6 +52,7 @@ type globalOptions struct {
 	until          string
 	format         string
 	noPager        bool
+	earlyAccess    bool
 	prices         pricing.Catalog
 	priceConfig    map[string]any
 	priceConfigErr error
@@ -135,6 +136,8 @@ func loadGlobalOptions(cmd *cobra.Command, opts *globalOptions) error {
 	}
 	opts.format = strings.TrimSpace(strings.ToLower(v.GetString("format")))
 	opts.prices = pricing.DefaultCatalog()
+	opts.earlyAccess = v.GetBool("pricing.early_access")
+	opts.prices.SetEarlyAccess(opts.earlyAccess)
 	opts.priceConfig = v.GetStringMap("prices")
 	if isPricesVerify(cmd) {
 		return validateOutputFormat(opts.format)

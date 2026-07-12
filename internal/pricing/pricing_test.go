@@ -72,6 +72,25 @@ func TestLookupHonorsEffectiveUntil(t *testing.T) {
 	}
 }
 
+func TestLookupEarlyAccessUsesEarliestKnownRateOnlyBeforeFirstSchedule(t *testing.T) {
+	catalog := Catalog{rates: []Rate{
+		{Provider: "test", Model: "model", EffectiveFrom: "2026-02-01", EffectiveUntil: "2026-03-01", InputPerMillionUSD: "1", CachedInputPerMillionUSD: "1", OutputPerMillionUSD: "1"},
+		{Provider: "test", Model: "model", EffectiveFrom: "2026-03-01", InputPerMillionUSD: "2", CachedInputPerMillionUSD: "2", OutputPerMillionUSD: "2"},
+	}}
+	beforeFirst, _ := time.Parse(time.DateOnly, "2026-01-01")
+	if _, ok := catalog.lookup("test", "model", beforeFirst); ok {
+		t.Fatal("early access must be disabled by default")
+	}
+	catalog.SetEarlyAccess(true)
+	if rate, ok := catalog.lookup("test", "model", beforeFirst); !ok || rate.InputPerMillionUSD != "1" {
+		t.Fatalf("early-access rate = %+v, %v; want earliest rate", rate, ok)
+	}
+	atSecond, _ := time.Parse(time.DateOnly, "2026-03-15")
+	if rate, ok := catalog.lookup("test", "model", atSecond); !ok || rate.InputPerMillionUSD != "2" {
+		t.Fatalf("rate after scheduled change = %+v, %v; want second rate", rate, ok)
+	}
+}
+
 func TestEstimateAppliesLongContextPricingPerRequest(t *testing.T) {
 	catalog := Catalog{}
 	if err := catalog.Override(Rate{

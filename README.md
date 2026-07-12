@@ -154,6 +154,16 @@ effective_from = "2025-08-07"
 source = "user"
 ```
 
+Organizations that used a model before its first public pricing date can opt
+into applying that model's earliest known rate to those earlier sessions:
+
+```toml
+[pricing]
+early_access = true
+```
+
+Without this setting, sessions before the first known price remain unpriced.
+
 Set `replace = true` to replace a model's entire bundled pricing history.
 
 Session costs use the API-equivalent basis. Cached input is excluded from

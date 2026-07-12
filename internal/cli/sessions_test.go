@@ -160,6 +160,32 @@ func TestSessionsCommandPrintsJSON(t *testing.T) {
 	}
 }
 
+func TestSessionsCommandPricesEarlyAccessModelsWhenConfigured(t *testing.T) {
+	root := t.TempDir()
+	sessionID := "019f44e4-5c01-7d22-9805-50cecaefde49"
+	contents := inspectFixtureForSessionAt(sessionID, time.Date(2026, 4, 1, 3, 20, 44, 0, time.UTC))
+	contents = strings.ReplaceAll(contents, `"model":"gpt-5-mini"`, `"model":"gpt-5.5"`)
+	contents = strings.ReplaceAll(contents, `"model":"gpt-5"`, `"model":"gpt-5.5"`)
+	writeRolloutContents(t, root, "sessions/2026/04/01/rollout-2026-04-01T03-20-44-"+sessionID+".jsonl", contents)
+	config := writeConfig(t, "[pricing]\nearly_access = true\n")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"--config", config, "--format", "json", "sessions", "--home", root})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+	var reports []sessionListReport
+	if err := json.Unmarshal(stdout.Bytes(), &reports); err != nil {
+		t.Fatalf("invalid JSON output: %v\n%s", err, stdout.String())
+	}
+	if len(reports) != 1 || reports[0].Cost.AmountUSD == nil || reports[0].Cost.Status != "complete" {
+		t.Fatalf("expected a complete early-access price, got %+v", reports)
+	}
+}
+
 func TestSessionsCommandSkipsMalformedTranscript(t *testing.T) {
 	root := t.TempDir()
 	validID := "019f44e4-5c01-7d22-9805-50cecaefde49"

@@ -58,7 +58,10 @@ type Estimate struct {
 	Limitations    []string      `json:"limitations,omitempty"`
 }
 
-type Catalog struct{ rates []Rate }
+type Catalog struct {
+	rates       []Rate
+	earlyAccess bool
+}
 
 // ValidationIssue identifies one invalid field in a configured rate.
 type ValidationIssue struct {
@@ -76,6 +79,13 @@ func (c Catalog) Rates() []Rate {
 		return rates[i].Provider+"/"+rates[i].Model < rates[j].Provider+"/"+rates[j].Model
 	})
 	return rates
+}
+
+// SetEarlyAccess allows the earliest known rate for a model to price sessions
+// that predate its first catalog schedule. It is intended for organizations
+// that had access to a model before its public release.
+func (c *Catalog) SetEarlyAccess(enabled bool) {
+	c.earlyAccess = enabled
 }
 
 // Validate checks that every effective rate can be used to estimate a cost.
@@ -412,9 +422,20 @@ func addUniqueString(values *[]string, value string) {
 }
 
 func (c Catalog) lookup(provider, model string, at time.Time) (Rate, bool) {
+	var earliest Rate
+	var earliestFrom time.Time
+	foundEarliest := false
 	for _, rate := range c.rates {
 		if rate.Provider != provider || rate.Model != model {
 			continue
+		}
+		if c.earlyAccess && !at.IsZero() {
+			from, err := time.Parse(time.DateOnly, rate.EffectiveFrom)
+			if err == nil && (!foundEarliest || from.Before(earliestFrom)) {
+				earliest = rate
+				earliestFrom = from
+				foundEarliest = true
+			}
 		}
 		if rate.EffectiveFrom != "" && !at.IsZero() {
 			effective, err := time.Parse(time.DateOnly, rate.EffectiveFrom)
@@ -429,6 +450,9 @@ func (c Catalog) lookup(provider, model string, at time.Time) (Rate, bool) {
 			}
 		}
 		return rate, true
+	}
+	if c.earlyAccess && foundEarliest && at.Before(earliestFrom) {
+		return earliest, true
 	}
 	return Rate{}, false
 }
