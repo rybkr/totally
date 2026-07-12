@@ -19,20 +19,17 @@ const (
 var CatalogVersion = loadedBundledCatalog.version
 
 type Rate struct {
-	Provider                    string `json:"provider" mapstructure:"provider"`
-	Model                       string `json:"model" mapstructure:"model"`
-	InputPerMillionUSD          string `json:"input_per_million_usd" mapstructure:"input_per_million_usd"`
-	CachedInputPerMillionUSD    string `json:"cached_input_per_million_usd" mapstructure:"cached_input_per_million_usd"`
-	OutputPerMillionUSD         string `json:"output_per_million_usd" mapstructure:"output_per_million_usd"`
-	Source                      string `json:"source" mapstructure:"source"`
-	EffectiveFrom               string `json:"effective_from" mapstructure:"effective_from"`
-	EffectiveUntil              string `json:"effective_until,omitempty" mapstructure:"effective_until"`
-	LongContextThreshold        int64  `json:"long_context_threshold,omitempty" mapstructure:"long_context_threshold"`
-	LongContextInputScale       string `json:"long_context_input_scale,omitempty" mapstructure:"long_context_input_scale"`
-	LongContextCachedInputScale string `json:"long_context_cached_input_scale,omitempty" mapstructure:"long_context_cached_input_scale"`
-	LongContextOutputScale      string `json:"long_context_output_scale,omitempty" mapstructure:"long_context_output_scale"`
-	CacheWriteInputScale        string `json:"cache_write_input_scale,omitempty" mapstructure:"cache_write_input_scale"`
-	CacheWritePerMillionUSD     string `json:"cache_write_per_million_usd,omitempty" mapstructure:"cache_write_per_million_usd"`
+	Provider                 string        `json:"provider" mapstructure:"provider"`
+	Model                    string        `json:"model" mapstructure:"model"`
+	InputPerMillionUSD       string        `json:"input_per_million_usd" mapstructure:"input_per_million_usd"`
+	CachedInputPerMillionUSD string        `json:"cached_input_per_million_usd" mapstructure:"cached_input_per_million_usd"`
+	OutputPerMillionUSD      string        `json:"output_per_million_usd" mapstructure:"output_per_million_usd"`
+	Source                   string        `json:"source" mapstructure:"source"`
+	EffectiveFrom            string        `json:"effective_from" mapstructure:"effective_from"`
+	EffectiveUntil           string        `json:"effective_until,omitempty" mapstructure:"effective_until"`
+	CacheWriteInputScale     string        `json:"cache_write_input_scale,omitempty" mapstructure:"cache_write_input_scale"`
+	CacheWritePerMillionUSD  string        `json:"cache_write_per_million_usd,omitempty" mapstructure:"cache_write_per_million_usd"`
+	Rules                    []PricingRule `json:"rules,omitempty" mapstructure:"-"`
 }
 
 type MissingRate struct {
@@ -157,10 +154,17 @@ func ValidateRate(rate Rate) []ValidationIssue {
 			issues = append(issues, ValidationIssue{Field: value.field, Message: "is required"})
 		}
 	}
-	for _, value := range []struct{ field, value string }{{"long_context_input_scale", rate.LongContextInputScale}, {"long_context_cached_input_scale", rate.LongContextCachedInputScale}, {"long_context_output_scale", rate.LongContextOutputScale}, {"cache_write_input_scale", rate.CacheWriteInputScale}} {
+	for _, value := range []struct{ field, value string }{{"cache_write_input_scale", rate.CacheWriteInputScale}} {
 		if value.value != "" {
 			add(value.field, func() error { _, err := parseScale(value.value); return err }())
 		}
+	}
+	for _, rule := range rate.Rules {
+		if rule == nil {
+			issues = append(issues, ValidationIssue{Field: "rules", Message: "must not contain null rules"})
+			continue
+		}
+		issues = append(issues, rule.Validate()...)
 	}
 	return issues
 }
@@ -268,39 +272,17 @@ func (c Catalog) Estimate(segments []session.UsageSegment, at time.Time) Estimat
 // token to the cheapest, then the most expensive, billable meter. This is a
 // bounded allocation assumption, not an observed input/output breakdown.
 func tokenBreakdownBoundsNanos(usage session.TokenUsage, rate Rate) (int64, int64, error) {
-	parsed, err := parseRate(rate)
+	parsed, err := meterRatesFor(rate, usage)
 	if err != nil {
 		return 0, 0, err
 	}
-	rates := []int64{parsed.input, parsed.cached, parsed.output}
-	cacheWriteRate, err := cacheWriteRateNanos(parsed.input, rate)
+	rates := []int64{parsed.Input, parsed.CachedInput, parsed.Output}
+	cacheWriteRate, err := cacheWriteRateNanos(parsed.Input, rate)
 	if err != nil {
 		return 0, 0, err
 	}
 	if cacheWriteRate != 0 {
 		rates = append(rates, cacheWriteRate)
-	}
-	if rate.LongContextThreshold > 0 && usage.TotalTokens > rate.LongContextThreshold {
-		inputScale, err := parseScale(rate.LongContextInputScale)
-		if err != nil {
-			return 0, 0, err
-		}
-		cachedScale, err := parseScale(rate.LongContextCachedInputScale)
-		if err != nil {
-			return 0, 0, err
-		}
-		outputScale, err := parseScale(rate.LongContextOutputScale)
-		if err != nil {
-			return 0, 0, err
-		}
-		rates = append(rates, parsed.input*inputScale/1_000, parsed.cached*cachedScale/1_000, parsed.output*outputScale/1_000)
-		if cacheWriteRate != 0 && rate.CacheWriteInputScale != "" {
-			writeScale, err := parseScale(rate.CacheWriteInputScale)
-			if err != nil {
-				return 0, 0, err
-			}
-			rates = append(rates, parsed.input*inputScale/1_000*writeScale/1_000)
-		}
 	}
 	minimum, maximum := rates[0], rates[0]
 	for _, candidate := range rates[1:] {
@@ -332,7 +314,7 @@ func cacheWriteRateNanos(inputRate int64, rate Rate) (int64, error) {
 // base estimate when any portion of uncached input could instead be cache
 // writes. Codex telemetry does not identify that portion.
 func cacheWriteUncertaintyNanos(usage session.TokenUsage, rate Rate) (int64, error) {
-	parsed, err := parseRate(rate)
+	parsed, err := meterRatesFor(rate, usage)
 	if err != nil {
 		return 0, err
 	}
@@ -340,14 +322,7 @@ func cacheWriteUncertaintyNanos(usage session.TokenUsage, rate Rate) (int64, err
 	if uncached < 0 {
 		uncached = 0
 	}
-	inputScale := int64(1_000)
-	if rate.LongContextThreshold > 0 && usage.InputTokens > rate.LongContextThreshold {
-		inputScale, err = parseScale(rate.LongContextInputScale)
-		if err != nil {
-			return 0, err
-		}
-	}
-	inputRate := parsed.input * inputScale / 1_000
+	inputRate := parsed.Input
 	cacheWriteRate := int64(0)
 	if rate.CacheWritePerMillionUSD != "" {
 		cacheWriteRate, err = parseUSDNanos(rate.CacheWritePerMillionUSD)
@@ -423,8 +398,21 @@ func parseRate(rate Rate) (parsedRate, error) {
 	return parsed, nil
 }
 
-func costNanos(usage session.TokenUsage, rate Rate) (int64, error) {
+func meterRatesFor(rate Rate, usage session.TokenUsage) (MeterRates, error) {
 	parsed, err := parseRate(rate)
+	if err != nil {
+		return MeterRates{}, err
+	}
+	return applyRules(rate, PricingContext{
+		InputTokens:       usage.InputTokens,
+		CachedInputTokens: usage.CachedInputTokens,
+		OutputTokens:      usage.OutputTokens,
+		TotalTokens:       usage.TotalTokens,
+	}, MeterRates{Input: parsed.input, CachedInput: parsed.cached, Output: parsed.output})
+}
+
+func costNanos(usage session.TokenUsage, rate Rate) (int64, error) {
+	parsed, err := meterRatesFor(rate, usage)
 	if err != nil {
 		return 0, err
 	}
@@ -432,25 +420,9 @@ func costNanos(usage session.TokenUsage, rate Rate) (int64, error) {
 	if uncached < 0 {
 		uncached = 0
 	}
-	inputScale, cachedScale, outputScale := int64(1_000), int64(1_000), int64(1_000)
-	if rate.LongContextThreshold > 0 && usage.InputTokens > rate.LongContextThreshold {
-		var err error
-		inputScale, err = parseScale(rate.LongContextInputScale)
-		if err != nil {
-			return 0, err
-		}
-		cachedScale, err = parseScale(rate.LongContextCachedInputScale)
-		if err != nil {
-			return 0, err
-		}
-		outputScale, err = parseScale(rate.LongContextOutputScale)
-		if err != nil {
-			return 0, err
-		}
-	}
-	inputCost := uncached * parsed.input * inputScale / 1_000
-	inputCost += usage.CachedInputTokens * parsed.cached * cachedScale / 1_000
-	outputCost := usage.OutputTokens * parsed.output * outputScale / 1_000
+	inputCost := uncached * parsed.Input
+	inputCost += usage.CachedInputTokens * parsed.CachedInput
+	outputCost := usage.OutputTokens * parsed.Output
 	numerator := inputCost + outputCost
 	return (numerator + tokensPerRate/2) / tokensPerRate, nil
 }

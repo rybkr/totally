@@ -54,7 +54,7 @@ func TestDefaultCatalogIsLoadedFromEmbeddedManifestAndCards(t *testing.T) {
 			break
 		}
 	}
-	if luna.InputPerMillionUSD != "1.00" || luna.CacheWritePerMillionUSD != "1.25" || luna.LongContextInputScale != "2" {
+	if luna.InputPerMillionUSD != "1.00" || luna.CacheWritePerMillionUSD != "1.25" || len(luna.Rules) != 1 {
 		t.Fatalf("embedded gpt-5.6-luna card was not translated correctly: %+v", luna)
 	}
 }
@@ -76,7 +76,7 @@ func TestEstimateAppliesLongContextPricingPerRequest(t *testing.T) {
 	catalog := Catalog{}
 	if err := catalog.Override(Rate{
 		Provider: "test", Model: "long", EffectiveFrom: "2020-01-01", InputPerMillionUSD: "1", CachedInputPerMillionUSD: "0.1", OutputPerMillionUSD: "2",
-		LongContextThreshold: 272_000, LongContextInputScale: "2", LongContextOutputScale: "1.5",
+		Rules: []PricingRule{LongContextRule{Type: "long_context", ThresholdTokens: 272_000, InputScale: "2", OutputScale: "1.5"}},
 	}); err != nil {
 		t.Fatal(err)
 	}

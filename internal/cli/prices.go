@@ -144,10 +144,17 @@ func priceErrorLabel(count int) string {
 func decodeConfiguredRate(provider, model string, fields map[string]any, path string) (pricing.Rate, []pricesVerifyIssue) {
 	rate := pricing.Rate{Provider: provider, Model: model}
 	var issues []pricesVerifyIssue
+	var longContext *pricing.LongContextRule
+	legacyLongContext := func() *pricing.LongContextRule {
+		if longContext == nil {
+			longContext = &pricing.LongContextRule{Type: "long_context"}
+		}
+		return longContext
+	}
 	values := map[string]*string{
 		"input_per_million_usd": &rate.InputPerMillionUSD, "cached_input_per_million_usd": &rate.CachedInputPerMillionUSD, "output_per_million_usd": &rate.OutputPerMillionUSD,
-		"source": &rate.Source, "effective_from": &rate.EffectiveFrom, "effective_until": &rate.EffectiveUntil, "long_context_input_scale": &rate.LongContextInputScale,
-		"long_context_cached_input_scale": &rate.LongContextCachedInputScale, "long_context_output_scale": &rate.LongContextOutputScale, "cache_write_input_scale": &rate.CacheWriteInputScale, "cache_write_per_million_usd": &rate.CacheWritePerMillionUSD,
+		"source": &rate.Source, "effective_from": &rate.EffectiveFrom, "effective_until": &rate.EffectiveUntil,
+		"cache_write_input_scale": &rate.CacheWriteInputScale, "cache_write_per_million_usd": &rate.CacheWritePerMillionUSD,
 	}
 	for name, value := range fields {
 		if target, ok := values[name]; ok {
@@ -159,16 +166,36 @@ func decodeConfiguredRate(provider, model string, fields map[string]any, path st
 			*target = text
 			continue
 		}
+		if name == "long_context_input_scale" || name == "long_context_cached_input_scale" || name == "long_context_output_scale" {
+			text, ok := value.(string)
+			if !ok {
+				issues = append(issues, pricesVerifyIssue{Path: path + "." + name, Message: "must be a string"})
+				continue
+			}
+			rule := legacyLongContext()
+			switch name {
+			case "long_context_input_scale":
+				rule.InputScale = text
+			case "long_context_cached_input_scale":
+				rule.CachedInputScale = text
+			case "long_context_output_scale":
+				rule.OutputScale = text
+			}
+			continue
+		}
 		if name == "long_context_threshold" {
 			value, ok := value.(int64)
 			if !ok || value < 0 {
 				issues = append(issues, pricesVerifyIssue{Path: path + "." + name, Message: "must be a non-negative integer"})
 			} else {
-				rate.LongContextThreshold = value
+				legacyLongContext().ThresholdTokens = value
 			}
 			continue
 		}
 		issues = append(issues, pricesVerifyIssue{Path: path + "." + name, Message: "unknown pricing field"})
+	}
+	if longContext != nil {
+		rate.Rules = append(rate.Rules, *longContext)
 	}
 	return rate, issues
 }

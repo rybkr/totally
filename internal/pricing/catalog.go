@@ -110,22 +110,11 @@ func mustLoadBundledCatalog() struct {
 				}
 			}
 			for _, adjustment := range schedule.Adjustments {
-				if adjustment.Kind != "threshold_multiplier" || adjustment.Scope != "request" || adjustment.Measure != "total_input_tokens" || adjustment.Operator != "gt" {
-					panic(fmt.Sprintf("pricing: unsupported adjustment in %q", name))
+				rule, err := bundledPricingRule(adjustment)
+				if err != nil {
+					panic(fmt.Sprintf("pricing: unsupported adjustment in %q: %v", name, err))
 				}
-				rate.LongContextThreshold = adjustment.Threshold
-				for _, target := range adjustment.Targets {
-					switch target.Meter {
-					case "input_tokens":
-						rate.LongContextInputScale = target.Multiplier
-					case "cached_input_tokens":
-						rate.LongContextCachedInputScale = target.Multiplier
-					case "output_tokens":
-						rate.LongContextOutputScale = target.Multiplier
-					default:
-						panic(fmt.Sprintf("pricing: unsupported adjustment target %q in %q", target.Meter, name))
-					}
-				}
+				rate.Rules = append(rate.Rules, rule)
 			}
 			if _, err := parseRate(rate); err != nil {
 				panic(fmt.Sprintf("pricing: invalid embedded model card %q: %v", name, err))
@@ -134,6 +123,26 @@ func mustLoadBundledCatalog() struct {
 		}
 	}
 	return result
+}
+
+func bundledPricingRule(adjustment bundledAdjustment) (PricingRule, error) {
+	if adjustment.Kind != "threshold_multiplier" || adjustment.Scope != "request" || adjustment.Measure != "total_input_tokens" || adjustment.Operator != "gt" {
+		return nil, fmt.Errorf("unknown rule kind %q", adjustment.Kind)
+	}
+	rule := LongContextRule{Type: "long_context", ThresholdTokens: adjustment.Threshold}
+	for _, target := range adjustment.Targets {
+		switch target.Meter {
+		case "input_tokens":
+			rule.InputScale = target.Multiplier
+		case "cached_input_tokens":
+			rule.CachedInputScale = target.Multiplier
+		case "output_tokens":
+			rule.OutputScale = target.Multiplier
+		default:
+			return nil, fmt.Errorf("unknown target meter %q", target.Meter)
+		}
+	}
+	return rule, nil
 }
 
 func validateBundledManifest(manifest bundledManifest) error {
