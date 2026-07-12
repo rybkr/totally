@@ -1,6 +1,6 @@
 # Release manifest for the bundled pricing facts.
 schema_version = 1
-catalog_version = "2026-07-11"
+catalog_version = "2026-07-12"
 
 files = [
   "openai/codex-mini-latest.toml",
@@ -19,6 +19,7 @@ files = [
   "openai/gpt-5.2-codex.toml",
   "openai/gpt-5.3-codex.toml",
   "openai/gpt-5.4.toml",
+  "openai/gpt-5.4-mini.toml",
   "openai/gpt-5.5.toml",
   "openai/gpt-5.6-sol.toml",
   "openai/gpt-5.6-terra.toml",
