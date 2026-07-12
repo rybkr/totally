@@ -138,8 +138,9 @@ reconciliation.
 field-level diagnostics for malformed keys, unknown fields, invalid monetary
 values, scales, and effective dates. It does not scan session files.
 
-Built-in prices can be replaced in the Totally TOML configuration. Override
-keys use `provider/model`, and monetary values are decimal strings:
+Built-in prices can be overridden for a date range in the Totally TOML
+configuration. Override keys use `provider/model`, and monetary values are
+decimal strings. Surrounding bundled history is retained:
 
 ```toml
 [prices."openai/gpt-5"]
@@ -149,6 +150,8 @@ output_per_million_usd = "10.00"
 effective_from = "2025-08-07"
 source = "user"
 ```
+
+Set `replace = true` to replace a model's entire bundled pricing history.
 
 Session costs use the API-equivalent basis. Cached input is excluded from
 regular input before applying its lower rate, and reasoning tokens are not

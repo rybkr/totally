@@ -90,6 +90,31 @@ func TestEstimateAppliesLongContextPricingPerRequest(t *testing.T) {
 	}
 }
 
+func TestOverlayPreservesSurroundingModelHistory(t *testing.T) {
+	catalog := Catalog{rates: []Rate{
+		{Provider: "test", Model: "model", EffectiveFrom: "2025-01-01", EffectiveUntil: "2025-06-01", InputPerMillionUSD: "1", CachedInputPerMillionUSD: "1", OutputPerMillionUSD: "1"},
+		{Provider: "test", Model: "model", EffectiveFrom: "2025-06-01", InputPerMillionUSD: "2", CachedInputPerMillionUSD: "2", OutputPerMillionUSD: "2"},
+	}}
+	if err := catalog.Overlay(Rate{Provider: "test", Model: "model", EffectiveFrom: "2025-03-01", EffectiveUntil: "2025-09-01", InputPerMillionUSD: "9", CachedInputPerMillionUSD: "9", OutputPerMillionUSD: "9"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, check := range []struct {
+		at   string
+		want string
+	}{
+		{"2025-02-01", "1"}, {"2025-04-01", "9"}, {"2025-07-01", "9"}, {"2025-10-01", "2"},
+	} {
+		at, _ := time.Parse(time.DateOnly, check.at)
+		rate, ok := catalog.lookup("test", "model", at)
+		if !ok || rate.InputPerMillionUSD != check.want {
+			t.Errorf("rate at %s = %+v, %v; want input %s", check.at, rate, ok, check.want)
+		}
+	}
+	if err := catalog.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestEstimateMarksUnknownCacheWriteSurchargePartial(t *testing.T) {
 	catalog := Catalog{}
 	if err := catalog.Override(Rate{

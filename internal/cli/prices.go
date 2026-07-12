@@ -76,14 +76,20 @@ func runPricesVerify(cmd *cobra.Command, stdout io.Writer, globals globalOptions
 				report.Issues = append(report.Issues, pricesVerifyIssue{Path: path, Message: "must be a pricing table"})
 				continue
 			}
-			rate, issues := decodeConfiguredRate(parts[0], parts[1], fields, path)
+			rate, replace, issues := decodeConfiguredRate(parts[0], parts[1], fields, path)
 			report.Issues = append(report.Issues, issues...)
 			rateIssues := pricing.ValidateRate(rate)
 			for _, issue := range rateIssues {
 				report.Issues = append(report.Issues, pricesVerifyIssue{Path: path + "." + issue.Field, Message: issue.Message})
 			}
 			if len(issues) == 0 && len(rateIssues) == 0 {
-				if err := catalog.Override(rate); err != nil {
+				var err error
+				if replace {
+					err = catalog.Override(rate)
+				} else {
+					err = catalog.Overlay(rate)
+				}
+				if err != nil {
 					report.Issues = append(report.Issues, pricesVerifyIssue{Path: path, Message: err.Error()})
 				}
 			}
@@ -141,8 +147,9 @@ func priceErrorLabel(count int) string {
 	return "errors"
 }
 
-func decodeConfiguredRate(provider, model string, fields map[string]any, path string) (pricing.Rate, []pricesVerifyIssue) {
+func decodeConfiguredRate(provider, model string, fields map[string]any, path string) (pricing.Rate, bool, []pricesVerifyIssue) {
 	rate := pricing.Rate{Provider: provider, Model: model}
+	var replace bool
 	var issues []pricesVerifyIssue
 	var longContext *pricing.LongContextRule
 	legacyLongContext := func() *pricing.LongContextRule {
@@ -157,6 +164,15 @@ func decodeConfiguredRate(provider, model string, fields map[string]any, path st
 		"cache_write_input_scale": &rate.CacheWriteInputScale, "cache_write_per_million_usd": &rate.CacheWritePerMillionUSD,
 	}
 	for name, value := range fields {
+		if name == "replace" {
+			parsed, ok := value.(bool)
+			if !ok {
+				issues = append(issues, pricesVerifyIssue{Path: path + ".replace", Message: "must be a boolean"})
+			} else {
+				replace = parsed
+			}
+			continue
+		}
 		if target, ok := values[name]; ok {
 			text, ok := value.(string)
 			if !ok {
@@ -197,7 +213,7 @@ func decodeConfiguredRate(provider, model string, fields map[string]any, path st
 	if longContext != nil {
 		rate.Rules = append(rate.Rules, *longContext)
 	}
-	return rate, issues
+	return rate, replace, issues
 }
 
 func runPrices(stdout io.Writer, globals globalOptions, opts pricesOptions) error {

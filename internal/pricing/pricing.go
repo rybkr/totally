@@ -189,6 +189,58 @@ func (c *Catalog) Override(rate Rate) error {
 	return nil
 }
 
+// Overlay replaces pricing only for rate's effective interval, preserving the
+// surrounding history for the same provider and model.
+func (c *Catalog) Overlay(rate Rate) error {
+	if rate.Provider == "" || rate.Model == "" {
+		return fmt.Errorf("price override requires provider and model")
+	}
+	if issues := ValidateRate(rate); len(issues) > 0 {
+		return fmt.Errorf("invalid %s/%s %s: %s", rate.Provider, rate.Model, issues[0].Field, issues[0].Message)
+	}
+	if rate.Source == "" {
+		rate.Source = "user"
+	}
+	from, _ := time.Parse(time.DateOnly, rate.EffectiveFrom)
+	var until time.Time
+	if rate.EffectiveUntil != "" {
+		until, _ = time.Parse(time.DateOnly, rate.EffectiveUntil)
+	}
+	kept := make([]Rate, 0, len(c.rates)+2)
+	for _, existing := range c.rates {
+		if existing.Provider != rate.Provider || existing.Model != rate.Model {
+			kept = append(kept, existing)
+			continue
+		}
+		existingFrom, _ := time.Parse(time.DateOnly, existing.EffectiveFrom)
+		var existingUntil time.Time
+		if existing.EffectiveUntil != "" {
+			existingUntil, _ = time.Parse(time.DateOnly, existing.EffectiveUntil)
+		}
+		if !rateIntervalsOverlap(existingFrom, existingUntil, from, until) {
+			kept = append(kept, existing)
+			continue
+		}
+		if existingFrom.Before(from) {
+			left := existing
+			left.EffectiveUntil = rate.EffectiveFrom
+			kept = append(kept, left)
+		}
+		if !until.IsZero() && (existingUntil.IsZero() || until.Before(existingUntil)) {
+			right := existing
+			right.EffectiveFrom = rate.EffectiveUntil
+			kept = append(kept, right)
+		}
+	}
+	c.rates = append(kept, rate)
+	return nil
+}
+
+func rateIntervalsOverlap(firstFrom, firstUntil, secondFrom, secondUntil time.Time) bool {
+	return (firstUntil.IsZero() || secondFrom.Before(firstUntil)) &&
+		(secondUntil.IsZero() || firstFrom.Before(secondUntil))
+}
+
 func (c Catalog) Estimate(segments []session.UsageSegment, at time.Time) Estimate {
 	result := Estimate{Currency: "USD", Status: "unavailable", Basis: "api_equivalent", PricingVersion: CatalogVersion}
 	var lowerTotal, upperTotal int64

@@ -139,17 +139,26 @@ func loadGlobalOptions(cmd *cobra.Command, opts *globalOptions) error {
 	if isPricesVerify(cmd) {
 		return validateOutputFormat(opts.format)
 	}
-	var overrides map[string]pricing.Rate
-	if err := v.UnmarshalKey("prices", &overrides); err != nil {
-		return fmt.Errorf("decode prices: %w", err)
-	}
-	for key, rate := range overrides {
+	for key, value := range opts.priceConfig {
 		parts := strings.SplitN(key, "/", 2)
-		if len(parts) != 2 {
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 			return fmt.Errorf("invalid price key %q: expected provider/model", key)
 		}
-		rate.Provider, rate.Model = parts[0], parts[1]
-		if err := opts.prices.Override(rate); err != nil {
+		fields, ok := value.(map[string]any)
+		if !ok {
+			return fmt.Errorf("invalid price %q: expected pricing table", key)
+		}
+		rate, replace, issues := decodeConfiguredRate(parts[0], parts[1], fields, `prices."`+key+`"`)
+		if len(issues) > 0 {
+			return fmt.Errorf("invalid %s: %s", key, issues[0].Message)
+		}
+		var err error
+		if replace {
+			err = opts.prices.Override(rate)
+		} else {
+			err = opts.prices.Overlay(rate)
+		}
+		if err != nil {
 			return err
 		}
 	}
