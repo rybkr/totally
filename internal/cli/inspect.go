@@ -440,10 +440,20 @@ func formatCostEstimate(cost pricing.Estimate) string {
 		return "unavailable (token usage is not attributed to a model)"
 	}
 	value := "$" + *cost.AmountUSD + " USD estimated (API-equivalent)"
-	if cost.Status == "partial" {
+	if cost.UncertaintyUSD != nil {
+		value = "~$" + formatTerminalUSD(*cost.AmountUSD) + " \u00b1 $" + formatTerminalUSD(*cost.UncertaintyUSD) + " USD estimated (cache-write uncertainty)"
+	} else if cost.Status == "partial" {
 		value += "; partial"
 	}
 	return value
+}
+
+func formatTerminalUSD(value string) string {
+	amount, err := strconv.ParseFloat(value, 64)
+	if err != nil || (amount != 0 && amount < 0.000001) {
+		return value
+	}
+	return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.6f", amount), "0"), ".")
 }
 
 func formatShowTime(report showReport) string {

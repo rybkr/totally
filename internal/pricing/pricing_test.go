@@ -98,8 +98,11 @@ func TestEstimateMarksUnknownCacheWriteSurchargePartial(t *testing.T) {
 		t.Fatal(err)
 	}
 	estimate := catalog.Estimate([]session.UsageSegment{{Provider: "test", Model: "writes", TokenUsage: session.TokenUsage{InputTokens: 1_000_000}}}, time.Time{})
-	if estimate.Status != "partial" || len(estimate.Limitations) != 1 {
+	if estimate.Status != "partial" || len(estimate.Limitations) != 1 || estimate.AmountUSD == nil || *estimate.AmountUSD != "1.125" {
 		t.Fatalf("unexpected cache-write estimate: %+v", estimate)
+	}
+	if estimate.LowerBoundUSD == nil || *estimate.LowerBoundUSD != "1" || estimate.UpperBoundUSD == nil || *estimate.UpperBoundUSD != "1.25" || estimate.UncertaintyUSD == nil || *estimate.UncertaintyUSD != "0.125" {
+		t.Fatalf("unexpected cache-write bounds: %+v", estimate)
 	}
 }
 

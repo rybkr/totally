@@ -50,6 +50,9 @@ type Component struct {
 type Estimate struct {
 	Currency       string        `json:"currency"`
 	AmountUSD      *string       `json:"amount"`
+	LowerBoundUSD  *string       `json:"lower_bound,omitempty"`
+	UpperBoundUSD  *string       `json:"upper_bound,omitempty"`
+	UncertaintyUSD *string       `json:"uncertainty,omitempty"`
 	Status         string        `json:"status"`
 	Basis          string        `json:"basis"`
 	PricingVersion string        `json:"pricing_version"`
@@ -94,31 +97,60 @@ func (c *Catalog) Override(rate Rate) error {
 
 func (c Catalog) Estimate(segments []session.UsageSegment, at time.Time) Estimate {
 	result := Estimate{Currency: "USD", Status: "unavailable", Basis: "api_equivalent", PricingVersion: CatalogVersion}
-	var total int64
+	var lowerTotal, upperTotal int64
+	bounded := false
+	unbounded := false
 	for _, segment := range segments {
 		if hasUnpriceableTokenBreakdown(segment.TokenUsage) {
 			addUniqueString(&result.Limitations, "some usage segments report total tokens without a billable token breakdown; their cost is excluded")
+			unbounded = true
 			continue
 		}
 		rate, ok := c.lookup(segment.Provider, segment.Model, at)
 		if !ok {
 			result.Missing = append(result.Missing, MissingRate{Provider: segment.Provider, Model: segment.Model})
+			unbounded = true
 			continue
 		}
 		amount, err := costNanos(segment.TokenUsage, rate)
 		if err != nil {
 			result.Missing = append(result.Missing, MissingRate{Provider: segment.Provider, Model: segment.Model})
+			unbounded = true
 			continue
 		}
-		total += amount
-		result.Components = append(result.Components, Component{Provider: segment.Provider, Model: segment.Model, TokenUsage: segment.TokenUsage, AmountUSD: formatNanos(amount)})
+		lowerTotal += amount
+		upperTotal += amount
+		componentAmount := amount
 		if rate.CacheWriteInputScale != "" || rate.CacheWritePerMillionUSD != "" {
-			addUniqueString(&result.Limitations, "cache-write tokens are not identified in the session transcript; any cache-write surcharge is excluded")
+			additional, err := cacheWriteUncertaintyNanos(segment.TokenUsage, rate)
+			if err != nil {
+				result.Missing = append(result.Missing, MissingRate{Provider: segment.Provider, Model: segment.Model})
+				unbounded = true
+				continue
+			}
+			if additional >= 0 {
+				upperTotal += additional
+				componentAmount = amount + additional/2
+			} else {
+				lowerTotal += additional
+				componentAmount = amount + additional/2
+			}
+			bounded = true
+			addUniqueString(&result.Limitations, "cache-write tokens are not identified in the session transcript; estimate uses the midpoint of the possible surcharge")
 		}
+		result.Components = append(result.Components, Component{Provider: segment.Provider, Model: segment.Model, TokenUsage: segment.TokenUsage, AmountUSD: formatNanos(componentAmount)})
 	}
 	if len(result.Components) > 0 {
-		amount := formatNanos(total)
+		amount := formatNanos((lowerTotal + upperTotal) / 2)
 		result.AmountUSD = &amount
+		if bounded && !unbounded {
+			lower := formatNanos(lowerTotal)
+			upper := formatNanos(upperTotal)
+			uncertainty := formatNanos((upperTotal - lowerTotal) / 2)
+			result.LowerBoundUSD = &lower
+			result.UpperBoundUSD = &upper
+			result.UncertaintyUSD = &uncertainty
+		}
 		result.Status = "complete"
 		if len(result.Missing) > 0 {
 			result.Status = "partial"
@@ -130,6 +162,42 @@ func (c Catalog) Estimate(segments []session.UsageSegment, at time.Time) Estimat
 		result.Status = "partial"
 	}
 	return result
+}
+
+// cacheWriteUncertaintyNanos returns the greatest possible change from the
+// base estimate when any portion of uncached input could instead be cache
+// writes. Codex telemetry does not identify that portion.
+func cacheWriteUncertaintyNanos(usage session.TokenUsage, rate Rate) (int64, error) {
+	parsed, err := parseRate(rate)
+	if err != nil {
+		return 0, err
+	}
+	uncached := usage.InputTokens - usage.CachedInputTokens
+	if uncached < 0 {
+		uncached = 0
+	}
+	inputScale := int64(1_000)
+	if rate.LongContextThreshold > 0 && usage.InputTokens > rate.LongContextThreshold {
+		inputScale, err = parseScale(rate.LongContextInputScale)
+		if err != nil {
+			return 0, err
+		}
+	}
+	inputRate := parsed.input * inputScale / 1_000
+	cacheWriteRate := int64(0)
+	if rate.CacheWritePerMillionUSD != "" {
+		cacheWriteRate, err = parseUSDNanos(rate.CacheWritePerMillionUSD)
+		if err != nil {
+			return 0, err
+		}
+	} else {
+		writeScale, err := parseScale(rate.CacheWriteInputScale)
+		if err != nil {
+			return 0, err
+		}
+		cacheWriteRate = inputRate * writeScale / 1_000
+	}
+	return uncached * (cacheWriteRate - inputRate) / tokensPerRate, nil
 }
 
 // hasUnpriceableTokenBreakdown reports a usage record that proves tokens were

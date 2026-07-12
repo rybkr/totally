@@ -155,8 +155,9 @@ object and retains `cost_usd` as a compatibility field.
 The bundled catalog also records conditional long-context multipliers. They are
 applied per request when a model charges more above its input-token threshold.
 GPT-5.6 cache writes carry an additional surcharge, but Codex transcripts do
-not currently distinguish cache-write tokens; estimates for those models are
-therefore marked `partial` and include that limitation in JSON.
+not currently distinguish cache-write tokens. Totally bounds the possible
+amount, uses its midpoint as the estimate, and marks it `partial`; terminal
+output shows the half-range as `±`, and JSON includes the explicit bounds.
 
 ## Raw files
 

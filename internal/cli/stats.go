@@ -50,6 +50,14 @@ type statsReportRow struct {
 	Stats  statsReport `json:"stats"`
 }
 
+type costTotals struct {
+	amount     big.Rat
+	lower      big.Rat
+	upper      big.Rat
+	hasBounds  bool
+	incomplete bool
+}
+
 func newStatsCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
 	var opts statsOptions
 	cmd := &cobra.Command{
@@ -286,23 +294,23 @@ func statsGroupKeys(record session.Record, by string) []string {
 
 func summarizeStats(records []session.Record, catalog pricing.Catalog) statsReport {
 	result := statsReport{Cost: pricing.Estimate{Currency: "USD", Status: "unavailable", Basis: "api_equivalent", PricingVersion: pricing.CatalogVersion}}
-	var amount big.Rat
+	var totals costTotals
 	for _, record := range records {
-		addStatsRecord(&result, &amount, record, catalog, true)
+		addStatsRecord(&result, &totals, record, catalog, true)
 	}
-	return finalizeStatsReport(result, amount)
+	return finalizeStatsReport(result, totals)
 }
 
 func summarizeGroupedStats(records []groupedStatsRecord, catalog pricing.Catalog) statsReport {
 	result := statsReport{Cost: pricing.Estimate{Currency: "USD", Status: "unavailable", Basis: "api_equivalent", PricingVersion: pricing.CatalogVersion}}
-	var amount big.Rat
+	var totals costTotals
 	for _, record := range records {
-		addStatsRecord(&result, &amount, record.Record, catalog, record.IncludeSessionStats)
+		addStatsRecord(&result, &totals, record.Record, catalog, record.IncludeSessionStats)
 	}
-	return finalizeStatsReport(result, amount)
+	return finalizeStatsReport(result, totals)
 }
 
-func addStatsRecord(result *statsReport, amount *big.Rat, record session.Record, catalog pricing.Catalog, includeSessionStats bool) {
+func addStatsRecord(result *statsReport, totals *costTotals, record session.Record, catalog pricing.Catalog, includeSessionStats bool) {
 	if includeSessionStats {
 		result.Sessions++
 		if record.FirstPrompt != "" {
@@ -327,19 +335,48 @@ func addStatsRecord(result *statsReport, amount *big.Rat, record session.Record,
 	if estimate.AmountUSD != nil {
 		value, ok := new(big.Rat).SetString(*estimate.AmountUSD)
 		if ok {
-			amount.Add(amount, value)
+			totals.amount.Add(&totals.amount, value)
+			totals.lower.Add(&totals.lower, value)
+			totals.upper.Add(&totals.upper, value)
 		}
+	} else {
+		totals.incomplete = true
+	}
+	if estimate.LowerBoundUSD != nil && estimate.UpperBoundUSD != nil {
+		lower, lowerOK := new(big.Rat).SetString(*estimate.LowerBoundUSD)
+		upper, upperOK := new(big.Rat).SetString(*estimate.UpperBoundUSD)
+		if lowerOK && upperOK {
+			// Replace this session's midpoint contribution with its exact bounds.
+			midpoint, _ := new(big.Rat).SetString(*estimate.AmountUSD)
+			totals.lower.Sub(&totals.lower, midpoint)
+			totals.upper.Sub(&totals.upper, midpoint)
+			totals.lower.Add(&totals.lower, lower)
+			totals.upper.Add(&totals.upper, upper)
+			totals.hasBounds = true
+		}
+	} else if len(estimate.Missing) > 0 || len(estimate.Limitations) > 0 {
+		totals.incomplete = true
 	}
 }
 
-func finalizeStatsReport(result statsReport, amount big.Rat) statsReport {
+func finalizeStatsReport(result statsReport, totals costTotals) statsReport {
 	if len(result.Cost.Components) > 0 {
-		value := strings.TrimRight(strings.TrimRight(amount.FloatString(9), "0"), ".")
+		value := strings.TrimRight(strings.TrimRight(totals.amount.FloatString(9), "0"), ".")
 		if value == "" {
 			value = "0"
 		}
 		result.Cost.AmountUSD = &value
-		result.CostUSD, _ = amount.Float64()
+		result.CostUSD, _ = totals.amount.Float64()
+		if totals.hasBounds && !totals.incomplete {
+			lower := strings.TrimRight(strings.TrimRight(totals.lower.FloatString(9), "0"), ".")
+			upper := strings.TrimRight(strings.TrimRight(totals.upper.FloatString(9), "0"), ".")
+			uncertainty := new(big.Rat).Sub(&totals.upper, &totals.lower)
+			uncertainty.Quo(uncertainty, big.NewRat(2, 1))
+			uncertaintyValue := strings.TrimRight(strings.TrimRight(uncertainty.FloatString(9), "0"), ".")
+			result.Cost.LowerBoundUSD = &lower
+			result.Cost.UpperBoundUSD = &upper
+			result.Cost.UncertaintyUSD = &uncertaintyValue
+		}
 		result.Cost.Status = "complete"
 		if len(result.Cost.Missing) > 0 || len(result.Cost.Limitations) > 0 {
 			result.Cost.Status = "partial"

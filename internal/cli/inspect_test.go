@@ -7,7 +7,18 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rybkr/totally/internal/pricing"
 )
+
+func TestFormatCostEstimatePrintsCacheWriteUncertainty(t *testing.T) {
+	amount, uncertainty := "0.321601", "0.018893"
+	got := formatCostEstimate(pricing.Estimate{AmountUSD: &amount, UncertaintyUSD: &uncertainty, Status: "partial"})
+	want := "~$0.321601 ± $0.018893 USD estimated (cache-write uncertainty)"
+	if got != want {
+		t.Fatalf("formatCostEstimate() = %q, want %q", got, want)
+	}
+}
 
 func TestShowCommandPrintsSingleSessionReport(t *testing.T) {
 	root := t.TempDir()
