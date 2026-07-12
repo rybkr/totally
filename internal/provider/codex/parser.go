@@ -19,7 +19,10 @@ import (
 type Parser struct{}
 
 type parseState struct {
-	activeModel string
+	activeModel       string
+	previousTotal     codexTokenUsage
+	previousLast      codexTokenUsage
+	hasTokenUsagePair bool
 }
 
 func NewParser() Parser {
@@ -207,8 +210,39 @@ func applyEventMsg(payload json.RawMessage, record *session.Record, state *parse
 	switch event.Type {
 	case "token_count":
 		if event.Info != nil {
-			record.TokenUsage = event.Info.TotalTokenUsage.toSessionUsage()
-			addUsageSegment(record, record.Provider, state.activeModel, event.Info.LastTokenUsage.toSessionUsage())
+			currentTotal := event.Info.TotalTokenUsage
+			currentLast := event.Info.LastTokenUsage
+			record.TokenUsage = currentTotal.toSessionUsage()
+
+			// Codex can repeat its latest counter snapshot when a session is
+			// resumed. The repeated last_token_usage is not another request.
+			// Compare the complete pair so two real requests with coincidentally
+			// identical incremental usage are still retained when the cumulative
+			// total advances.
+			if state.hasTokenUsagePair && currentTotal == state.previousTotal && currentLast == state.previousLast {
+				return nil
+			}
+
+			if currentTotal != state.previousTotal {
+				delta, ok := currentTotal.subtract(state.previousTotal)
+				if !ok {
+					return fmt.Errorf("cumulative token usage regressed")
+				}
+				if delta != currentLast {
+					return fmt.Errorf("cumulative token usage delta does not match last_token_usage")
+				}
+				addUsageSegment(record, record.Provider, state.activeModel, delta.toSessionUsage())
+			} else if currentLast.hasBillableBreakdown() {
+				return fmt.Errorf("last_token_usage changed without cumulative token usage advancing")
+			} else {
+				// Compaction events can report only total_tokens and do not advance
+				// Codex's cumulative billable input/output counters.
+				addUsageSegment(record, record.Provider, state.activeModel, currentLast.toSessionUsage())
+			}
+
+			state.previousTotal = currentTotal
+			state.previousLast = currentLast
+			state.hasTokenUsagePair = true
 		}
 	}
 	return nil
@@ -272,6 +306,27 @@ type codexTokenUsage struct {
 	OutputTokens          int64 `json:"output_tokens"`
 	ReasoningOutputTokens int64 `json:"reasoning_output_tokens"`
 	TotalTokens           int64 `json:"total_tokens"`
+}
+
+func (usage codexTokenUsage) subtract(previous codexTokenUsage) (codexTokenUsage, bool) {
+	if usage.InputTokens < previous.InputTokens ||
+		usage.CachedInputTokens < previous.CachedInputTokens ||
+		usage.OutputTokens < previous.OutputTokens ||
+		usage.ReasoningOutputTokens < previous.ReasoningOutputTokens ||
+		usage.TotalTokens < previous.TotalTokens {
+		return codexTokenUsage{}, false
+	}
+	return codexTokenUsage{
+		InputTokens:           usage.InputTokens - previous.InputTokens,
+		CachedInputTokens:     usage.CachedInputTokens - previous.CachedInputTokens,
+		OutputTokens:          usage.OutputTokens - previous.OutputTokens,
+		ReasoningOutputTokens: usage.ReasoningOutputTokens - previous.ReasoningOutputTokens,
+		TotalTokens:           usage.TotalTokens - previous.TotalTokens,
+	}, true
+}
+
+func (usage codexTokenUsage) hasBillableBreakdown() bool {
+	return usage.InputTokens != 0 || usage.CachedInputTokens != 0 || usage.OutputTokens != 0 || usage.ReasoningOutputTokens != 0
 }
 
 func (usage codexTokenUsage) toSessionUsage() session.TokenUsage {

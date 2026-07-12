@@ -116,15 +116,61 @@ func TestParserAttributesIncrementalUsageAcrossModels(t *testing.T) {
 func TestParserPreservesRequestsUsingTheSameModel(t *testing.T) {
 	path := writeRolloutJSONL(t, `{"type":"session_meta","payload":{"model_provider":"openai"}}
 {"type":"turn_context","payload":{"model":"gpt-5"}}
-{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10}}}}
-{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":20}}}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10},"last_token_usage":{"input_tokens":10}}}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":20},"last_token_usage":{"input_tokens":10}}}}
 `)
 	record, err := NewParser().ParseSession(context.Background(), session.FileRef{Path: path})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(record.UsageSegments) != 2 || record.UsageSegments[0].TokenUsage.InputTokens != 10 || record.UsageSegments[1].TokenUsage.InputTokens != 20 {
+	if len(record.UsageSegments) != 2 || record.UsageSegments[0].TokenUsage.InputTokens != 10 || record.UsageSegments[1].TokenUsage.InputTokens != 10 {
 		t.Fatalf("requests were not preserved: %+v", record.UsageSegments)
+	}
+}
+
+func TestParserDeduplicatesRepeatedTokenCountSnapshots(t *testing.T) {
+	path := writeRolloutJSONL(t, `{"type":"session_meta","payload":{"model_provider":"openai"}}
+{"type":"turn_context","payload":{"model":"gpt-5"}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12},"last_token_usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12},"last_token_usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":30,"output_tokens":5,"total_tokens":35},"last_token_usage":{"input_tokens":20,"output_tokens":3,"total_tokens":23}}}}
+`)
+	record, err := NewParser().ParseSession(context.Background(), session.FileRef{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(record.UsageSegments) != 2 {
+		t.Fatalf("repeated snapshot was priced as another request: %+v", record.UsageSegments)
+	}
+	if record.UsageSegments[1].TokenUsage != (session.TokenUsage{InputTokens: 20, OutputTokens: 3, TotalTokens: 23}) {
+		t.Fatalf("second request was not derived from the cumulative delta: %+v", record.UsageSegments[1])
+	}
+}
+
+func TestParserPreservesUniqueTotalOnlyCompactionAndDeduplicatesItsRepeat(t *testing.T) {
+	path := writeRolloutJSONL(t, `{"type":"session_meta","payload":{"model_provider":"openai"}}
+{"type":"turn_context","payload":{"model":"gpt-5"}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12},"last_token_usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12},"last_token_usage":{"total_tokens":5003}}}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12},"last_token_usage":{"total_tokens":5003}}}}
+`)
+	record, err := NewParser().ParseSession(context.Background(), session.FileRef{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(record.UsageSegments) != 2 || record.UsageSegments[1].TokenUsage != (session.TokenUsage{TotalTokens: 5_003}) {
+		t.Fatalf("unexpected compaction segments: %+v", record.UsageSegments)
+	}
+}
+
+func TestParserRejectsTokenUsageDeltaMismatch(t *testing.T) {
+	path := writeRolloutJSONL(t, `{"type":"session_meta","payload":{"model_provider":"openai"}}
+{"type":"turn_context","payload":{"model":"gpt-5"}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10},"last_token_usage":{"input_tokens":9}}}}
+`)
+	_, err := NewParser().ParseSession(context.Background(), session.FileRef{Path: path})
+	if err == nil || !strings.Contains(err.Error(), "delta does not match") {
+		t.Fatalf("expected cumulative delta mismatch, got %v", err)
 	}
 }
 
