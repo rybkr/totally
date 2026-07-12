@@ -236,6 +236,39 @@ func TestFilesCommandFiltersSince(t *testing.T) {
 	}
 }
 
+func TestFilesCommandTimeBoundAliases(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		flag  string
+		value string
+	}{
+		{name: "after", flag: "--after", value: "2026-07-09"},
+		{name: "before", flag: "--before", value: "2026-07-07"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeRollout(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl")
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			cmd := newTestRootCommand(t, &stdout, &stderr)
+			cmd.SetArgs([]string{test.flag, test.value, "files", "--home", root, "--format", "json"})
+
+			if err := cmd.ExecuteContext(context.Background()); err != nil {
+				t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+			}
+
+			var files []session.FileRef
+			if err := json.Unmarshal(stdout.Bytes(), &files); err != nil {
+				t.Fatalf("invalid JSON output: %v\n%s", err, stdout.String())
+			}
+			if len(files) != 0 {
+				t.Fatalf("expected no files after %s filter, got %d", test.flag, len(files))
+			}
+		})
+	}
+}
+
 func TestFilesCommandIncludesRecentLocalRolloutWithRelativeSince(t *testing.T) {
 	root := t.TempDir()
 	recentTime := time.Now().Add(-50 * time.Minute)

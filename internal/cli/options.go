@@ -66,7 +66,9 @@ func addGlobalFlags(cmd *cobra.Command, opts *globalOptions) {
 	cmd.PersistentFlags().StringArrayVar(&opts.homes, "home", nil, "agent home directory; may be repeated")
 	cmd.PersistentFlags().BoolVar(&opts.archived, "archived", false, "include archived sessions")
 	cmd.PersistentFlags().StringVar(&opts.since, "since", "", "include sessions at or after TIME (duration units: h, d, w, y; or YYYY-MM-DD/RFC3339)")
+	cmd.PersistentFlags().StringVar(&opts.since, "after", "", "alias for --since")
 	cmd.PersistentFlags().StringVar(&opts.until, "until", "", "include sessions at or before TIME (duration units: h, d, w, y; or YYYY-MM-DD/RFC3339)")
+	cmd.PersistentFlags().StringVar(&opts.until, "before", "", "alias for --until")
 	cmd.PersistentFlags().StringVar(&opts.format, "format", "table", "output format: table, json")
 	cmd.PersistentFlags().BoolVar(&opts.noPager, "no-pager", false, "disable terminal paging")
 }
@@ -108,8 +110,20 @@ func loadGlobalOptions(cmd *cobra.Command, opts *globalOptions) error {
 	opts.agent = v.GetString("agent")
 	opts.homes = normalizeHomeValues(v.GetStringSlice("home"))
 	opts.archived = v.GetBool("archived")
-	opts.since = v.GetString("since")
-	opts.until = v.GetString("until")
+	// The aliases share the flag variables with their canonical names. Prefer a
+	// command-line value when either spelling was supplied; otherwise retain the
+	// configured canonical value.
+	flags := cmd.Root().PersistentFlags()
+	if flags.Changed("since") || flags.Changed("after") {
+		opts.since = flags.Lookup("since").Value.String()
+	} else {
+		opts.since = v.GetString("since")
+	}
+	if flags.Changed("until") || flags.Changed("before") {
+		opts.until = flags.Lookup("until").Value.String()
+	} else {
+		opts.until = v.GetString("until")
+	}
 	opts.format = strings.TrimSpace(strings.ToLower(v.GetString("format")))
 	opts.prices = pricing.DefaultCatalog()
 	var overrides map[string]pricing.Rate
