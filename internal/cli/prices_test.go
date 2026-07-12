@@ -24,6 +24,30 @@ func TestPricesCommandPrintsBuiltInRates(t *testing.T) {
 	}
 }
 
+func TestPricesCommandFiltersByProviderAndModel(t *testing.T) {
+	config := writeConfig(t, `[prices."example/gpt-5"]
+input_per_million_usd = "2"
+cached_input_per_million_usd = "0.2"
+output_per_million_usd = "12"
+effective_from = "2026-01-01"
+`)
+	var stdout, stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"prices", "--provider", "example", "--model", "gpt-5", "--config", config, "--format", "json"})
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Rates []pricing.Rate `json:"rates"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Rates) != 1 || result.Rates[0].Provider != "example" || result.Rates[0].Model != "gpt-5" {
+		t.Fatalf("unexpected rates: %+v", result.Rates)
+	}
+}
+
 func TestPricesCommandLoadsConfigOverride(t *testing.T) {
 	config := filepath.Join(t.TempDir(), "config.toml")
 	contents := `[prices."openai/gpt-5"]
@@ -143,6 +167,34 @@ output_per_million_usd = "12"
 		t.Fatal(err)
 	}
 	if len(result.Issues) != 1 || result.Issues[0].Path != `prices."openai/gpt-5".effective_from` {
+		t.Fatalf("unexpected verification report: %+v", result)
+	}
+}
+
+func TestPricesVerifyFiltersByProviderAndModel(t *testing.T) {
+	config := writeConfig(t, `[prices."openai/gpt-5"]
+input_per_million_usd = "1"
+cached_input_per_million_usd = "0.1"
+output_per_million_usd = "12"
+effective_from = "2026-01-01"
+
+[prices."example/gpt-5"]
+input_per_million_usd = "invalid"
+cached_input_per_million_usd = "0.1"
+output_per_million_usd = "12"
+effective_from = "2026-01-01"
+`)
+	var stdout, stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"prices", "verify", "--provider", "openai", "--model", "gpt-5", "--config", config, "--format", "json"})
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var result pricesVerifyReport
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.Valid || result.Overrides != 1 || len(result.Issues) != 0 {
 		t.Fatalf("unexpected verification report: %+v", result)
 	}
 }

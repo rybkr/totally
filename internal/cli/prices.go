@@ -11,7 +11,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type pricesOptions struct{ model string }
+type pricesOptions struct {
+	model    string
+	provider string
+}
 
 func newPricesCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
 	var opts pricesOptions
@@ -20,6 +23,7 @@ func newPricesCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error { return runPrices(stdout, *globals, opts) },
 	}
 	cmd.Flags().StringVar(&opts.model, "model", "", "limit prices to a model")
+	cmd.Flags().StringVar(&opts.provider, "provider", "", "limit prices to a provider")
 	cmd.AddCommand(newPricesVerifyCommand(stdout, globals))
 	return cmd
 }
@@ -38,17 +42,21 @@ type pricesVerifyIssue struct {
 }
 
 func newPricesVerifyCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
-	return &cobra.Command{
+	var opts pricesOptions
+	cmd := &cobra.Command{
 		Use:   "verify",
 		Short: "Validate configured pricing overrides",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPricesVerify(cmd, stdout, *globals)
+			return runPricesVerify(cmd, stdout, *globals, opts)
 		},
 	}
+	cmd.Flags().StringVar(&opts.model, "model", "", "limit validation to a model")
+	cmd.Flags().StringVar(&opts.provider, "provider", "", "limit validation to a provider")
+	return cmd
 }
 
-func runPricesVerify(cmd *cobra.Command, stdout io.Writer, globals globalOptions) error {
+func runPricesVerify(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts pricesOptions) error {
 	report := pricesVerifyReport{Valid: true, Config: globals.config, CatalogVersion: pricing.CatalogVersion}
 	catalog := globals.prices
 	if globals.priceConfigErr != nil {
@@ -62,9 +70,15 @@ func runPricesVerify(cmd *cobra.Command, stdout io.Writer, globals globalOptions
 		sort.Strings(keys)
 		for _, key := range keys {
 			value := globals.priceConfig[key]
-			report.Overrides++
 			path := `prices."` + key + `"`
-			parts := strings.Split(key, "/")
+			parts := strings.SplitN(key, "/", 2)
+			if len(parts) != 2 && (opts.provider != "" || opts.model != "") {
+				continue
+			}
+			if len(parts) == 2 && !matchesPriceFilters(parts[0], parts[1], opts) {
+				continue
+			}
+			report.Overrides++
 			if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 				report.Valid = false
 				report.Issues = append(report.Issues, pricesVerifyIssue{Path: path, Message: "expected provider/model"})
@@ -218,15 +232,13 @@ func decodeConfiguredRate(provider, model string, fields map[string]any, path st
 
 func runPrices(stdout io.Writer, globals globalOptions, opts pricesOptions) error {
 	rates := globals.prices.Rates()
-	if opts.model != "" {
-		filtered := rates[:0]
-		for _, rate := range rates {
-			if rate.Model == opts.model {
-				filtered = append(filtered, rate)
-			}
+	filtered := rates[:0]
+	for _, rate := range rates {
+		if matchesPriceFilters(rate.Provider, rate.Model, opts) {
+			filtered = append(filtered, rate)
 		}
-		rates = filtered
 	}
+	rates = filtered
 	switch globals.format {
 	case outputFormatJSON:
 		return json.NewEncoder(stdout).Encode(struct {
@@ -247,4 +259,9 @@ func runPrices(stdout io.Writer, globals globalOptions, opts pricesOptions) erro
 	default:
 		return fmt.Errorf("unknown format %q", globals.format)
 	}
+}
+
+func matchesPriceFilters(provider, model string, opts pricesOptions) bool {
+	return (opts.provider == "" || provider == opts.provider) &&
+		(opts.model == "" || model == opts.model)
 }

@@ -125,8 +125,10 @@ breaking ties), so group totals remain additive.
 ```sh
 totally prices
 totally prices --model gpt-5
+totally prices --provider openai --model gpt-5
 totally prices --format json
 totally prices verify
+totally prices verify --provider openai --model gpt-5
 ```
 
 Pricing output shows the configured rates per million tokens for input, cached
@@ -136,7 +138,8 @@ reconciliation.
 
 `totally prices verify` validates configured pricing overrides and prints
 field-level diagnostics for malformed keys, unknown fields, invalid monetary
-values, scales, and effective dates. It does not scan session files.
+values, scales, and effective dates. Use `--provider` and/or `--model` to
+validate only matching overrides. It does not scan session files.
 
 Built-in prices can be overridden for a date range in the Totally TOML
 configuration. Override keys use `provider/model`, and monetary values are
