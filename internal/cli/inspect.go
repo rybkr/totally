@@ -414,6 +414,9 @@ func printShowReport(w io.Writer, report showReport, full bool) error {
 
 func formatCostEstimate(cost pricing.Estimate) string {
 	if cost.AmountUSD == nil {
+		if cost.Status == "partial" {
+			return "partial (some token usage cannot be priced)"
+		}
 		if len(cost.Missing) > 0 {
 			return fmt.Sprintf("unavailable (no price for %s/%s)", cost.Missing[0].Provider, cost.Missing[0].Model)
 		}

@@ -6,6 +6,10 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/rybkr/totally/internal/pricing"
+	"github.com/rybkr/totally/internal/session"
 )
 
 func TestStatsCommandAggregatesSessionsAndEmitsJSON(t *testing.T) {
@@ -30,6 +34,31 @@ func TestStatsCommandAggregatesSessionsAndEmitsJSON(t *testing.T) {
 	}
 	if report.TokenUsage.TotalTokens != 250 || report.Cost.AmountUSD == nil || *report.Cost.AmountUSD != "0.000132" {
 		t.Fatalf("unexpected usage or cost: %+v", report)
+	}
+}
+
+func TestGroupStatsRecordsByModelAttributesUsageAndAssignsSessionStatsOnce(t *testing.T) {
+	created := time.Date(2026, time.July, 8, 12, 0, 0, 0, time.UTC)
+	record := session.Record{
+		SessionID: "multi-model",
+		CreatedAt: created, UpdatedAt: created.Add(2 * time.Minute),
+		Models: []string{"gpt-5", "gpt-5-mini"}, FirstPrompt: "help",
+		Turns: 3, Messages: 5, ToolCalls: 2,
+		TokenUsage: session.TokenUsage{TotalTokens: 150},
+		UsageSegments: []session.UsageSegment{
+			{Model: "gpt-5", TokenUsage: session.TokenUsage{InputTokens: 80, TotalTokens: 100}},
+			{Model: "gpt-5-mini", TokenUsage: session.TokenUsage{InputTokens: 40, TotalTokens: 50}},
+		},
+	}
+
+	groups := groupStatsRecords([]session.Record{record}, "model")
+	primary := summarizeGroupedStats(groups["gpt-5"], pricing.DefaultCatalog())
+	secondary := summarizeGroupedStats(groups["gpt-5-mini"], pricing.DefaultCatalog())
+	if primary.Sessions != 1 || primary.Prompts != 1 || primary.DurationSeconds != 120 || primary.Turns != 3 || primary.Messages != 5 || primary.ToolCalls != 2 || primary.TokenUsage.TotalTokens != 100 {
+		t.Fatalf("unexpected primary model stats: %+v", primary)
+	}
+	if secondary.Sessions != 0 || secondary.Prompts != 0 || secondary.DurationSeconds != 0 || secondary.Turns != 0 || secondary.Messages != 0 || secondary.ToolCalls != 0 || secondary.TokenUsage.TotalTokens != 50 {
+		t.Fatalf("unexpected secondary model stats: %+v", secondary)
 	}
 }
 

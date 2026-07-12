@@ -139,3 +139,22 @@ func TestEstimateReportsPartialAndUnavailablePricing(t *testing.T) {
 		t.Fatalf("unexpected unavailable estimate: %+v", unavailable)
 	}
 }
+
+func TestEstimateExcludesUsageWithOnlyTotalTokens(t *testing.T) {
+	catalog := Catalog{}
+	if err := catalog.Override(Rate{Provider: "test", Model: "known", InputPerMillionUSD: "1", CachedInputPerMillionUSD: "1", OutputPerMillionUSD: "1"}); err != nil {
+		t.Fatal(err)
+	}
+	estimate := catalog.Estimate([]session.UsageSegment{
+		{Provider: "test", Model: "known", TokenUsage: session.TokenUsage{InputTokens: 1_000_000, TotalTokens: 1_000_000}},
+		{Provider: "test", Model: "known", TokenUsage: session.TokenUsage{TotalTokens: 5_003}},
+	}, time.Time{})
+	if estimate.Status != "partial" || estimate.AmountUSD == nil || *estimate.AmountUSD != "1" || len(estimate.Components) != 1 || len(estimate.Limitations) != 1 {
+		t.Fatalf("total-only usage must be excluded from a partial estimate: %+v", estimate)
+	}
+
+	unpriceable := catalog.Estimate([]session.UsageSegment{{Provider: "test", Model: "known", TokenUsage: session.TokenUsage{TotalTokens: 5_003}}}, time.Time{})
+	if unpriceable.Status != "partial" || unpriceable.AmountUSD != nil || len(unpriceable.Components) != 0 || len(unpriceable.Limitations) != 1 {
+		t.Fatalf("total-only usage must be unpriceable: %+v", unpriceable)
+	}
+}

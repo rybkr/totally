@@ -101,7 +101,7 @@ func runStats(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts 
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		report.Groups = append(report.Groups, statsReportRow{Group: key, Stats: summarizeStats(groups[key], globals.prices)})
+		report.Groups = append(report.Groups, statsReportRow{Group: key, Stats: summarizeGroupedStats(groups[key], globals.prices)})
 	}
 	if globals.format == outputFormatJSON {
 		return json.NewEncoder(stdout).Encode(report)
@@ -138,15 +138,73 @@ func filterStatsRecords(records []session.Record, opts statsOptions) []session.R
 	return filtered
 }
 
-func groupStatsRecords(records []session.Record, by string) map[string][]session.Record {
-	groups := make(map[string][]session.Record)
+type groupedStatsRecord struct {
+	Record              session.Record
+	IncludeSessionStats bool
+}
+
+func groupStatsRecords(records []session.Record, by string) map[string][]groupedStatsRecord {
+	groups := make(map[string][]groupedStatsRecord)
 	for _, record := range records {
+		if by == "model" {
+			groupStatsRecordByModel(groups, record)
+			continue
+		}
 		keys := statsGroupKeys(record, by)
 		for _, key := range keys {
-			groups[key] = append(groups[key], record)
+			groups[key] = append(groups[key], groupedStatsRecord{Record: record, IncludeSessionStats: true})
 		}
 	}
 	return groups
+}
+
+// groupStatsRecordByModel attributes tokens and pricing from each usage segment
+// to its model. Session-level fields cannot be split reliably, so they are
+// assigned to the model with the most attributed tokens (first seen wins ties).
+// This keeps model groups additive without inventing fractional sessions or
+// activity counts.
+func groupStatsRecordByModel(groups map[string][]groupedStatsRecord, record session.Record) {
+	segmentsByModel := make(map[string][]session.UsageSegment)
+	models := make([]string, 0, len(record.UsageSegments))
+	for _, segment := range record.UsageSegments {
+		if segment.Model == "" {
+			continue
+		}
+		if _, ok := segmentsByModel[segment.Model]; !ok {
+			models = append(models, segment.Model)
+		}
+		segmentsByModel[segment.Model] = append(segmentsByModel[segment.Model], segment)
+	}
+	if len(models) == 0 {
+		key := "(unknown)"
+		if len(record.Models) > 0 && record.Models[0] != "" {
+			key = record.Models[0]
+		}
+		groups[key] = append(groups[key], groupedStatsRecord{Record: record, IncludeSessionStats: true})
+		return
+	}
+
+	primary := models[0]
+	var primaryTokens int64 = -1
+	for _, model := range models {
+		var tokens int64
+		for _, segment := range segmentsByModel[model] {
+			tokens += segment.TokenUsage.TotalTokens
+		}
+		if tokens > primaryTokens {
+			primary, primaryTokens = model, tokens
+		}
+	}
+	for _, model := range models {
+		attributed := record
+		attributed.Models = []string{model}
+		attributed.UsageSegments = segmentsByModel[model]
+		attributed.TokenUsage = session.TokenUsage{}
+		for _, segment := range attributed.UsageSegments {
+			addTokenUsage(&attributed.TokenUsage, segment.TokenUsage)
+		}
+		groups[model] = append(groups[model], groupedStatsRecord{Record: attributed, IncludeSessionStats: model == primary})
+	}
 }
 
 func statsGroupKeys(record session.Record, by string) []string {
@@ -187,6 +245,22 @@ func summarizeStats(records []session.Record, catalog pricing.Catalog) statsRepo
 	result := statsReport{Cost: pricing.Estimate{Currency: "USD", Status: "unavailable", Basis: "api_equivalent", PricingVersion: pricing.CatalogVersion}}
 	var amount big.Rat
 	for _, record := range records {
+		addStatsRecord(&result, &amount, record, catalog, true)
+	}
+	return finalizeStatsReport(result, amount)
+}
+
+func summarizeGroupedStats(records []groupedStatsRecord, catalog pricing.Catalog) statsReport {
+	result := statsReport{Cost: pricing.Estimate{Currency: "USD", Status: "unavailable", Basis: "api_equivalent", PricingVersion: pricing.CatalogVersion}}
+	var amount big.Rat
+	for _, record := range records {
+		addStatsRecord(&result, &amount, record.Record, catalog, record.IncludeSessionStats)
+	}
+	return finalizeStatsReport(result, amount)
+}
+
+func addStatsRecord(result *statsReport, amount *big.Rat, record session.Record, catalog pricing.Catalog, includeSessionStats bool) {
+	if includeSessionStats {
 		result.Sessions++
 		if record.FirstPrompt != "" {
 			result.Prompts++
@@ -197,22 +271,25 @@ func summarizeStats(records []session.Record, catalog pricing.Catalog) statsRepo
 		result.Turns += record.Turns
 		result.Messages += record.Messages
 		result.ToolCalls += record.ToolCalls
-		addTokenUsage(&result.TokenUsage, record.TokenUsage)
-		estimate := catalog.Estimate(record.UsageSegments, record.CreatedAt)
-		result.Cost.Components = append(result.Cost.Components, estimate.Components...)
-		for _, missing := range estimate.Missing {
-			addMissingRate(&result.Cost.Missing, missing)
-		}
-		for _, limitation := range estimate.Limitations {
-			addUniqueString(&result.Cost.Limitations, limitation)
-		}
-		if estimate.AmountUSD != nil {
-			value, ok := new(big.Rat).SetString(*estimate.AmountUSD)
-			if ok {
-				amount.Add(&amount, value)
-			}
+	}
+	addTokenUsage(&result.TokenUsage, record.TokenUsage)
+	estimate := catalog.Estimate(record.UsageSegments, record.CreatedAt)
+	result.Cost.Components = append(result.Cost.Components, estimate.Components...)
+	for _, missing := range estimate.Missing {
+		addMissingRate(&result.Cost.Missing, missing)
+	}
+	for _, limitation := range estimate.Limitations {
+		addUniqueString(&result.Cost.Limitations, limitation)
+	}
+	if estimate.AmountUSD != nil {
+		value, ok := new(big.Rat).SetString(*estimate.AmountUSD)
+		if ok {
+			amount.Add(amount, value)
 		}
 	}
+}
+
+func finalizeStatsReport(result statsReport, amount big.Rat) statsReport {
 	if len(result.Cost.Components) > 0 {
 		value := strings.TrimRight(strings.TrimRight(amount.FloatString(9), "0"), ".")
 		if value == "" {
@@ -224,6 +301,8 @@ func summarizeStats(records []session.Record, catalog pricing.Catalog) statsRepo
 		if len(result.Cost.Missing) > 0 || len(result.Cost.Limitations) > 0 {
 			result.Cost.Status = "partial"
 		}
+	} else if len(result.Cost.Limitations) > 0 {
+		result.Cost.Status = "partial"
 	}
 	return result
 }

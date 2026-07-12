@@ -114,6 +114,10 @@ totally stats --cwd . --by day --pretty
 The currently available session selectors are `--cwd`, `--provider`, and
 `--model` (along with the global `--since`, `--until`, `--archived`, `--home`,
 and `--format` flags). `--by project` groups by session working directory.
+For `--by model`, tokens and cost are attributed from per-request usage
+segments. Session-level measures (sessions, prompts, duration, and activity)
+are assigned to the model with the most attributed tokens (with first-seen
+breaking ties), so group totals remain additive.
 
 ## Pricing
 

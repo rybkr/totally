@@ -96,6 +96,10 @@ func (c Catalog) Estimate(segments []session.UsageSegment, at time.Time) Estimat
 	result := Estimate{Currency: "USD", Status: "unavailable", Basis: "api_equivalent", PricingVersion: CatalogVersion}
 	var total int64
 	for _, segment := range segments {
+		if hasUnpriceableTokenBreakdown(segment.TokenUsage) {
+			addUniqueString(&result.Limitations, "some usage segments report total tokens without a billable token breakdown; their cost is excluded")
+			continue
+		}
 		rate, ok := c.lookup(segment.Provider, segment.Model, at)
 		if !ok {
 			result.Missing = append(result.Missing, MissingRate{Provider: segment.Provider, Model: segment.Model})
@@ -122,8 +126,21 @@ func (c Catalog) Estimate(segments []session.UsageSegment, at time.Time) Estimat
 		if len(result.Limitations) > 0 {
 			result.Status = "partial"
 		}
+	} else if len(result.Limitations) > 0 {
+		result.Status = "partial"
 	}
 	return result
+}
+
+// hasUnpriceableTokenBreakdown reports a usage record that proves tokens were
+// consumed but cannot be priced because the transcript omitted every billable
+// counter. total_tokens alone is not enough to assign an input/output price.
+func hasUnpriceableTokenBreakdown(usage session.TokenUsage) bool {
+	return usage.TotalTokens != 0 &&
+		usage.InputTokens == 0 &&
+		usage.CachedInputTokens == 0 &&
+		usage.OutputTokens == 0 &&
+		usage.ReasoningOutputTokens == 0
 }
 
 func addUniqueString(values *[]string, value string) {

@@ -128,6 +128,20 @@ func TestParserPreservesRequestsUsingTheSameModel(t *testing.T) {
 	}
 }
 
+func TestParserPreservesCompactionUsageWithoutBillableBreakdown(t *testing.T) {
+	path := writeRolloutJSONL(t, `{"type":"session_meta","payload":{"model_provider":"openai"}}
+{"type":"turn_context","payload":{"model":"gpt-5"}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"total_tokens":5003}}}}
+`)
+	record, err := NewParser().ParseSession(context.Background(), session.FileRef{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(record.UsageSegments) != 1 || record.UsageSegments[0].TokenUsage != (session.TokenUsage{TotalTokens: 5_003}) {
+		t.Fatalf("compaction usage was not preserved: %+v", record.UsageSegments)
+	}
+}
+
 func TestParserParseCompressedSession(t *testing.T) {
 	path := writeCompressedRollout(t, rolloutFixture())
 
