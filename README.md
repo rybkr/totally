@@ -78,8 +78,12 @@ prefix is accepted.
 ```sh
 totally show 019f44e4
 totally show --latest
+totally show --latest --cwd . --provider openai --model gpt-5
 totally show 019f44e4 --full
 ```
+
+`--cwd`, `--provider`, and `--model` narrow `--latest` to the most recently
+updated matching session. They can be combined and require `--latest`.
 
 The report includes session metadata, project, first prompt/task descriptor,
 transcript location, model/provider use, prompts, turns, messages, tool calls,

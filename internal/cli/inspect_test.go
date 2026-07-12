@@ -63,6 +63,56 @@ func TestShowCommandPrintsMostRecentlyUpdatedSession(t *testing.T) {
 	}
 }
 
+func TestShowCommandLatestFilters(t *testing.T) {
+	root := t.TempDir()
+	matchingID := "019f44e4-5c01-7d22-9805-50cecaefde49"
+	newerID := "019f44e4-5c01-7d22-9805-50cecaefde50"
+	matching := strings.Replace(inspectFixtureForSessionAt(matchingID, time.Date(2026, 7, 8, 3, 20, 44, 0, time.UTC)), "/tmp/project", root, -1)
+	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+matchingID+".jsonl", matching)
+	newer := strings.Replace(inspectFixtureForSessionAt(newerID, time.Date(2026, 7, 9, 3, 20, 44, 0, time.UTC)), "\"model_provider\":\"openai\"", "\"model_provider\":\"anthropic\"", 1)
+	newer = strings.Replace(newer, "\"model\":\"gpt-5\"", "\"model\":\"claude-sonnet-4\"", 1)
+	writeRolloutContents(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-"+newerID+".jsonl", newer)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"show", "--home", root, "--latest", "--cwd", root, "--provider", "OPENAI", "--model", "GPT-5"})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Session     "+matchingID) {
+		t.Fatalf("expected matching session %q, got:\n%s", matchingID, stdout.String())
+	}
+}
+
+func TestShowCommandLatestFiltersRequireLatest(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"show", "--provider", "openai", "019f44e4"})
+
+	err := cmd.ExecuteContext(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "require --latest") {
+		t.Fatalf("expected latest requirement error, got %v", err)
+	}
+}
+
+func TestShowCommandLatestFiltersReportNoMatch(t *testing.T) {
+	root := t.TempDir()
+	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl", inspectFixture())
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"show", "--home", root, "--latest", "--model", "missing-model"})
+
+	err := cmd.ExecuteContext(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "no sessions found matching --latest filters") {
+		t.Fatalf("expected no match error, got %v", err)
+	}
+}
+
 func TestShowLatestSkipsMalformedTranscript(t *testing.T) {
 	root := t.TempDir()
 	validID := "019f44e4-5c01-7d22-9805-50cecaefde49"

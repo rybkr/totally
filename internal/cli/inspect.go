@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -39,22 +40,29 @@ type inspectSummary struct {
 }
 
 type showOptions struct {
-	latest bool
-	full   bool
+	latest   bool
+	cwd      string
+	provider string
+	model    string
+	full     bool
 }
 
 func newShowCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
 	var opts showOptions
 
 	cmd := &cobra.Command{
-		Use:   "show <session-id> | --latest",
+		Use:   "show <session-id> | --latest [--cwd PATH] [--provider NAME] [--model NAME]",
 		Short: "Show a detailed, single-session report",
 		Args: func(cmd *cobra.Command, args []string) error {
+			qualifiers := opts.cwd != "" || opts.provider != "" || opts.model != ""
 			if opts.latest {
 				if len(args) != 0 {
 					return fmt.Errorf("--latest does not accept a session ID")
 				}
 				return nil
+			}
+			if qualifiers {
+				return fmt.Errorf("--cwd, --provider, and --model require --latest")
 			}
 			return cobra.ExactArgs(1)(cmd, args)
 		},
@@ -63,6 +71,9 @@ func newShowCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&opts.latest, "latest", false, "show the most recently updated session")
+	cmd.Flags().StringVar(&opts.cwd, "cwd", "", "limit --latest to sessions in this working directory")
+	cmd.Flags().StringVar(&opts.provider, "provider", "", "limit --latest to sessions from this provider")
+	cmd.Flags().StringVar(&opts.model, "model", "", "limit --latest to sessions using this model")
 	cmd.Flags().BoolVar(&opts.full, "full", false, "do not truncate display values in table output")
 
 	return cmd
@@ -76,6 +87,13 @@ func runShow(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts s
 
 	var record session.Record
 	if opts.latest {
+		if opts.cwd != "" {
+			cwd, err := canonicalShowCWD(opts.cwd)
+			if err != nil {
+				return fmt.Errorf("resolve --cwd: %w", err)
+			}
+			opts.cwd = cwd
+		}
 		files, err := discoverSessionFiles(cmd, globals)
 		if err != nil {
 			return err
@@ -84,8 +102,9 @@ func runShow(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts s
 		if err != nil {
 			return err
 		}
+		records = filterShowLatestRecords(records, opts)
 		if len(records) == 0 {
-			return fmt.Errorf("no sessions found")
+			return fmt.Errorf("no sessions found matching --latest filters")
 		}
 		sortRecordsByUpdated(records)
 		record = records[0]
@@ -115,6 +134,39 @@ func runShow(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts s
 	default:
 		return fmt.Errorf("unknown format %q", globals.format)
 	}
+}
+
+func filterShowLatestRecords(records []session.Record, opts showOptions) []session.Record {
+	filtered := records[:0]
+	for _, record := range records {
+		if opts.cwd != "" {
+			recordCWD, err := canonicalShowCWD(record.CWD)
+			if err != nil || recordCWD != opts.cwd {
+				continue
+			}
+		}
+		if opts.provider != "" && !strings.EqualFold(record.Provider, opts.provider) {
+			continue
+		}
+		if opts.model != "" && !hasShowModel(record.Models, opts.model) {
+			continue
+		}
+		filtered = append(filtered, record)
+	}
+	return filtered
+}
+
+func canonicalShowCWD(cwd string) (string, error) {
+	return filepath.Abs(filepath.Clean(cwd))
+}
+
+func hasShowModel(models []string, want string) bool {
+	for _, model := range models {
+		if strings.EqualFold(model, want) {
+			return true
+		}
+	}
+	return false
 }
 
 func parseDiscoveredSessions(cmd *cobra.Command, globals globalOptions, parsers []session.Parser) ([]session.Record, error) {
