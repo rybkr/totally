@@ -152,6 +152,11 @@ be attributed to a priced model, `show` reports the estimate as unavailable or
 partial rather than treating it as zero. JSON includes the structured `cost`
 object and retains `cost_usd` as a compatibility field.
 
+When a transcript identifies a priced model but reports only `total_tokens`,
+Totally bounds the estimate by assigning those tokens to the cheapest and most
+expensive billable meters, then uses the midpoint. The JSON cost object records
+the resulting lower and upper bounds.
+
 The bundled catalog also records conditional long-context multipliers. They are
 applied per request when a model charges more above its input-token threshold.
 GPT-5.6 cache writes carry an additional surcharge, but Codex transcripts do

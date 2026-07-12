@@ -101,15 +101,25 @@ func (c Catalog) Estimate(segments []session.UsageSegment, at time.Time) Estimat
 	bounded := false
 	unbounded := false
 	for _, segment := range segments {
-		if hasUnpriceableTokenBreakdown(segment.TokenUsage) {
-			addUniqueString(&result.Limitations, "some usage segments report total tokens without a billable token breakdown; their cost is excluded")
-			unbounded = true
-			continue
-		}
 		rate, ok := c.lookup(segment.Provider, segment.Model, at)
 		if !ok {
 			result.Missing = append(result.Missing, MissingRate{Provider: segment.Provider, Model: segment.Model})
 			unbounded = true
+			continue
+		}
+		if hasUnpriceableTokenBreakdown(segment.TokenUsage) {
+			lower, upper, err := tokenBreakdownBoundsNanos(segment.TokenUsage, rate)
+			if err != nil {
+				result.Missing = append(result.Missing, MissingRate{Provider: segment.Provider, Model: segment.Model})
+				unbounded = true
+				continue
+			}
+			lowerTotal += lower
+			upperTotal += upper
+			componentAmount := (lower + upper) / 2
+			result.Components = append(result.Components, Component{Provider: segment.Provider, Model: segment.Model, TokenUsage: segment.TokenUsage, AmountUSD: formatNanos(componentAmount)})
+			bounded = bounded || lower != upper
+			addUniqueString(&result.Limitations, "some usage segments report total tokens without a billable token breakdown; estimate uses the midpoint of the possible meter allocation")
 			continue
 		}
 		amount, err := costNanos(segment.TokenUsage, rate)
@@ -162,6 +172,70 @@ func (c Catalog) Estimate(segments []session.UsageSegment, at time.Time) Estimat
 		result.Status = "partial"
 	}
 	return result
+}
+
+// tokenBreakdownBoundsNanos prices total-only telemetry by assigning every
+// token to the cheapest, then the most expensive, billable meter. This is a
+// bounded allocation assumption, not an observed input/output breakdown.
+func tokenBreakdownBoundsNanos(usage session.TokenUsage, rate Rate) (int64, int64, error) {
+	parsed, err := parseRate(rate)
+	if err != nil {
+		return 0, 0, err
+	}
+	rates := []int64{parsed.input, parsed.cached, parsed.output}
+	cacheWriteRate, err := cacheWriteRateNanos(parsed.input, rate)
+	if err != nil {
+		return 0, 0, err
+	}
+	if cacheWriteRate != 0 {
+		rates = append(rates, cacheWriteRate)
+	}
+	if rate.LongContextThreshold > 0 && usage.TotalTokens > rate.LongContextThreshold {
+		inputScale, err := parseScale(rate.LongContextInputScale)
+		if err != nil {
+			return 0, 0, err
+		}
+		cachedScale, err := parseScale(rate.LongContextCachedInputScale)
+		if err != nil {
+			return 0, 0, err
+		}
+		outputScale, err := parseScale(rate.LongContextOutputScale)
+		if err != nil {
+			return 0, 0, err
+		}
+		rates = append(rates, parsed.input*inputScale/1_000, parsed.cached*cachedScale/1_000, parsed.output*outputScale/1_000)
+		if cacheWriteRate != 0 && rate.CacheWriteInputScale != "" {
+			writeScale, err := parseScale(rate.CacheWriteInputScale)
+			if err != nil {
+				return 0, 0, err
+			}
+			rates = append(rates, parsed.input*inputScale/1_000*writeScale/1_000)
+		}
+	}
+	minimum, maximum := rates[0], rates[0]
+	for _, candidate := range rates[1:] {
+		if candidate < minimum {
+			minimum = candidate
+		}
+		if candidate > maximum {
+			maximum = candidate
+		}
+	}
+	return usage.TotalTokens * minimum / tokensPerRate, usage.TotalTokens * maximum / tokensPerRate, nil
+}
+
+func cacheWriteRateNanos(inputRate int64, rate Rate) (int64, error) {
+	if rate.CacheWritePerMillionUSD != "" {
+		return parseUSDNanos(rate.CacheWritePerMillionUSD)
+	}
+	if rate.CacheWriteInputScale == "" {
+		return 0, nil
+	}
+	scale, err := parseScale(rate.CacheWriteInputScale)
+	if err != nil {
+		return 0, err
+	}
+	return inputRate * scale / 1_000, nil
 }
 
 // cacheWriteUncertaintyNanos returns the greatest possible change from the

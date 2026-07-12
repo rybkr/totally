@@ -143,21 +143,19 @@ func TestEstimateReportsPartialAndUnavailablePricing(t *testing.T) {
 	}
 }
 
-func TestEstimateExcludesUsageWithOnlyTotalTokens(t *testing.T) {
+func TestEstimateBoundsUsageWithOnlyTotalTokens(t *testing.T) {
 	catalog := Catalog{}
-	if err := catalog.Override(Rate{Provider: "test", Model: "known", InputPerMillionUSD: "1", CachedInputPerMillionUSD: "1", OutputPerMillionUSD: "1"}); err != nil {
+	if err := catalog.Override(Rate{Provider: "test", Model: "known", InputPerMillionUSD: "1", CachedInputPerMillionUSD: "0.1", OutputPerMillionUSD: "2"}); err != nil {
 		t.Fatal(err)
 	}
 	estimate := catalog.Estimate([]session.UsageSegment{
 		{Provider: "test", Model: "known", TokenUsage: session.TokenUsage{InputTokens: 1_000_000, TotalTokens: 1_000_000}},
 		{Provider: "test", Model: "known", TokenUsage: session.TokenUsage{TotalTokens: 5_003}},
 	}, time.Time{})
-	if estimate.Status != "partial" || estimate.AmountUSD == nil || *estimate.AmountUSD != "1" || len(estimate.Components) != 1 || len(estimate.Limitations) != 1 {
-		t.Fatalf("total-only usage must be excluded from a partial estimate: %+v", estimate)
+	if estimate.Status != "partial" || estimate.AmountUSD == nil || *estimate.AmountUSD != "1.00525315" || len(estimate.Components) != 2 || len(estimate.Limitations) != 1 {
+		t.Fatalf("unexpected bounded total-only estimate: %+v", estimate)
 	}
-
-	unpriceable := catalog.Estimate([]session.UsageSegment{{Provider: "test", Model: "known", TokenUsage: session.TokenUsage{TotalTokens: 5_003}}}, time.Time{})
-	if unpriceable.Status != "partial" || unpriceable.AmountUSD != nil || len(unpriceable.Components) != 0 || len(unpriceable.Limitations) != 1 {
-		t.Fatalf("total-only usage must be unpriceable: %+v", unpriceable)
+	if estimate.LowerBoundUSD == nil || *estimate.LowerBoundUSD != "1.0005003" || estimate.UpperBoundUSD == nil || *estimate.UpperBoundUSD != "1.010006" || estimate.UncertaintyUSD == nil || *estimate.UncertaintyUSD != "0.00475285" {
+		t.Fatalf("unexpected total-only bounds: %+v", estimate)
 	}
 }
