@@ -72,8 +72,20 @@ source = "user"
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Rates) != 2 || result.Rates[0].InputPerMillionUSD != "2" || result.Rates[0].Source != "user" || result.Rates[1].EffectiveUntil != "2026-01-01" {
+	if len(result.Rates) != 2 {
 		t.Fatalf("unexpected rates: %+v", result.Rates)
+	}
+	var foundOverride, foundHistorical bool
+	for _, rate := range result.Rates {
+		if rate.InputPerMillionUSD == "2" && rate.Source == "user" && rate.EffectiveFrom == "2026-01-01" {
+			foundOverride = true
+		}
+		if rate.EffectiveUntil == "2026-01-01" {
+			foundHistorical = true
+		}
+	}
+	if !foundOverride || !foundHistorical {
+		t.Fatalf("override or historical rate missing: %+v", result.Rates)
 	}
 }
 
