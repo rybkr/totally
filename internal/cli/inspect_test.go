@@ -28,7 +28,7 @@ func TestShowCommandPrintsSingleSessionReport(t *testing.T) {
 		"Session     " + sessionID,
 		"Source      codex",
 		"Models      gpt-5, gpt-5-mini",
-		"Project     /tmp/project",
+		"CWD         /tmp/project",
 		"Provider    openai",
 		"Prompt      Explain this session",
 		"Time        2026-07-09T03:20:44Z -> 2026-07-09T03:20:48Z (4s)",
@@ -161,6 +161,12 @@ func TestShowCommandPrintsJSONReport(t *testing.T) {
 	if _, found := fields["status"]; found {
 		t.Fatalf("status must not be present in JSON output: %s", stdout.String())
 	}
+	if _, found := fields["project"]; found {
+		t.Fatalf("project must not be present in JSON output: %s", stdout.String())
+	}
+	if _, found := fields["cwd"]; !found {
+		t.Fatalf("missing cwd in JSON output: %s", stdout.String())
+	}
 	var tokenUsage map[string]json.RawMessage
 	if err := json.Unmarshal(fields["token_usage"], &tokenUsage); err != nil {
 		t.Fatalf("invalid token_usage object: %v", err)
@@ -183,8 +189,8 @@ func TestShowCommandPrintsJSONReport(t *testing.T) {
 	if report.DurationSeconds == nil || *report.DurationSeconds != 4 {
 		t.Fatalf("unexpected duration_seconds: %+v", report.DurationSeconds)
 	}
-	if report.Project == nil || *report.Project != "/tmp/project" {
-		t.Fatalf("unexpected project: %+v", report.Project)
+	if report.CWD == nil || *report.CWD != "/tmp/project" {
+		t.Fatalf("unexpected cwd: %+v", report.CWD)
 	}
 	if report.Provider == nil || *report.Provider != "openai" {
 		t.Fatalf("unexpected provider: %+v", report.Provider)
@@ -246,6 +252,18 @@ func TestShowCommandTruncatesPromptUnlessFull(t *testing.T) {
 				t.Fatalf("missing %q in output:\\n%s", test.want, stdout.String())
 			}
 		})
+	}
+}
+
+func TestShowPromptMaxForTerminalWidth(t *testing.T) {
+	if got := showPromptMaxForTerminalWidth(48); got != 36 {
+		t.Fatalf("showPromptMaxForTerminalWidth() = %d, want 36", got)
+	}
+	if got := showPromptMaxForTerminalWidth(20); got != sessionPromptMinRunes {
+		t.Fatalf("showPromptMaxForTerminalWidth() = %d, want %d", got, sessionPromptMinRunes)
+	}
+	if got := showPromptMaxForTerminalWidth(200); got != sessionPromptMaxRunes {
+		t.Fatalf("showPromptMaxForTerminalWidth() = %d, want %d", got, sessionPromptMaxRunes)
 	}
 }
 

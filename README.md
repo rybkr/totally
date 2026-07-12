@@ -22,7 +22,7 @@ how much it used and cost, and where the underlying transcript lives.
 These filters apply wherever they are meaningful:
 
 ```text
---project NAME|PATH             Limit to a project
+--cwd PATH                      Limit to a working directory
 --since TIME, --after TIME      Records at or after TIME
 --until TIME, --before TIME     Records at or before TIME
 --model MODEL                   Limit to a model
@@ -50,12 +50,12 @@ inspect a specific home or combine several homes in one report.
 ## Find sessions
 
 `sessions` answers “which session was that?” Its table includes the session ID,
-project, first prompt/task descriptor, start time, model, estimated cost, and
+working directory, first prompt/task descriptor, start time, model, estimated cost, and
 token use.
 
 ```sh
 totally sessions
-totally sessions --project totally --since 7d
+totally sessions --cwd . --since 7d
 totally sessions --prompt "command set"
 totally sessions --model gpt-5 --sort cost --limit 10
 totally sessions --full
@@ -85,7 +85,7 @@ totally show 019f44e4 --full
 `--cwd`, `--provider`, and `--model` narrow `--latest` to the most recently
 updated matching session. They can be combined and require `--latest`.
 
-The report includes session metadata, project, first prompt/task descriptor,
+The report includes session metadata, working directory, first prompt/task descriptor,
 transcript location, model/provider use, prompts, turns, messages, tool calls,
 duration, token breakdown, and estimated cost.
 
@@ -114,7 +114,6 @@ totally stats --cwd . --by day --pretty
 The currently available session selectors are `--cwd`, `--provider`, and
 `--model` (along with the global `--since`, `--until`, `--archived`, `--home`,
 and `--format` flags). `--by cwd` groups by session working directory.
-`--by project` remains a compatibility alias for `cwd`.
 For `--by model`, tokens and cost are attributed from per-request usage
 segments. Session-level measures (sessions, prompts, duration, and activity)
 are assigned to the model with the most attributed tokens (with first-seen
@@ -173,6 +172,6 @@ and storage. Use `sessions` for normal work.
 Terminal tables are the default. Use JSON for scripts and integrations:
 
 ```sh
-totally stats --project totally --since 30d --format json
+totally stats --cwd . --since 30d --format json
 totally sessions --since 7d --format json
 ```

@@ -128,7 +128,8 @@ func runShow(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts s
 	report := newShowReport(record, globals.prices)
 	switch globals.format {
 	case outputFormatTable:
-		return printShowReport(stdout, report, opts.full)
+		terminalWidth, _ := outputTerminalWidth(stdout)
+		return printShowReport(stdout, report, opts.full, terminalWidth)
 	case outputFormatJSON:
 		return json.NewEncoder(stdout).Encode(report)
 	default:
@@ -250,7 +251,7 @@ type showReport struct {
 	CreatedAt       *string              `json:"created_at"`
 	UpdatedAt       *string              `json:"updated_at"`
 	DurationSeconds *int64               `json:"duration_seconds"`
-	Project         *string              `json:"project"`
+	CWD             *string              `json:"cwd"`
 	Provider        *string              `json:"provider"`
 	FirstPrompt     *string              `json:"first_prompt"`
 	Path            string               `json:"path"`
@@ -304,7 +305,7 @@ func newShowReport(record session.Record, catalog pricing.Catalog) showReport {
 		report.DurationSeconds = &duration
 	}
 	if record.CWD != "" {
-		report.Project = &record.CWD
+		report.CWD = &record.CWD
 	}
 	if record.Provider != "" {
 		provider := record.Provider
@@ -373,7 +374,7 @@ func printInspectSummary(w io.Writer, summary inspectSummary) error {
 	return printTokenUsage(w, summary.TokenUsage)
 }
 
-func printShowReport(w io.Writer, report showReport, full bool) error {
+func printShowReport(w io.Writer, report showReport, full bool, terminalWidth int) error {
 	lines := []struct {
 		label string
 		value string
@@ -384,15 +385,19 @@ func printShowReport(w io.Writer, report showReport, full bool) error {
 	if models := strings.Join(report.Models, ", "); models != "" {
 		lines = append(lines, struct{ label, value string }{"Models", models})
 	}
-	if project := stringPtrValue(report.Project); project != "" {
-		lines = append(lines, struct{ label, value string }{"Project", project})
+	if cwd := stringPtrValue(report.CWD); cwd != "" {
+		lines = append(lines, struct{ label, value string }{"CWD", cwd})
 	}
 	if provider := stringPtrValue(report.Provider); provider != "" {
 		lines = append(lines, struct{ label, value string }{"Provider", provider})
 	}
 	if prompt := stringPtrValue(report.FirstPrompt); prompt != "" {
 		if !full {
-			prompt = formatSessionPrompt(prompt)
+			promptMaxWidth := sessionPromptMaxRunes
+			if terminalWidth > 0 {
+				promptMaxWidth = showPromptMaxForTerminalWidth(terminalWidth)
+			}
+			prompt = formatSessionPromptToWidth(prompt, promptMaxWidth)
 		}
 		lines = append(lines, struct{ label, value string }{"Prompt", prompt})
 	}
@@ -410,6 +415,18 @@ func printShowReport(w io.Writer, report showReport, full bool) error {
 		}
 	}
 	return nil
+}
+
+func showPromptMaxForTerminalWidth(terminalWidth int) int {
+	// Show prints its values after a left-aligned, 11-column label and a space.
+	available := terminalWidth - 12
+	if available < sessionPromptMinRunes {
+		return sessionPromptMinRunes
+	}
+	if available > sessionPromptMaxRunes {
+		return sessionPromptMaxRunes
+	}
+	return available
 }
 
 func formatCostEstimate(cost pricing.Estimate) string {

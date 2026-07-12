@@ -89,34 +89,32 @@ func TestStatsCommandGroupsAndFiltersLikeShow(t *testing.T) {
 	}
 }
 
-func TestStatsCommandGroupsByCWDAndNormalizesProjectAlias(t *testing.T) {
+func TestStatsCommandGroupsByCWD(t *testing.T) {
 	root := t.TempDir()
 	sessionID := "019f44e4-5c01-7d22-9805-50cecaefde49"
 	contents := strings.Replace(inspectFixtureForSession(sessionID), "/tmp/project", root, -1)
 	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+sessionID+".jsonl", contents)
 
-	for _, by := range []string{"cwd", "project"} {
-		var stdout, stderr bytes.Buffer
-		cmd := newTestRootCommand(t, &stdout, &stderr)
-		cmd.SetArgs([]string{"stats", "--home", root, "--by", by, "--format", "json"})
-		if err := cmd.ExecuteContext(context.Background()); err != nil {
-			t.Fatalf("run --by %s: %v\\nstderr: %s", by, err, stderr.String())
-		}
-		var report groupedStatsReport
-		if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
-			t.Fatalf("decode --by %s report: %v\\n%s", by, err, stdout.String())
-		}
-		if report.By != "cwd" || len(report.Groups) != 1 || report.Groups[0].Group != root {
-			t.Fatalf("unexpected --by %s report: %+v", by, report)
-		}
+	var stdout, stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"stats", "--home", root, "--by", "cwd", "--format", "json"})
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run --by cwd: %v\\nstderr: %s", err, stderr.String())
+	}
+	var report groupedStatsReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode --by cwd report: %v\\n%s", err, stdout.String())
+	}
+	if report.By != "cwd" || len(report.Groups) != 1 || report.Groups[0].Group != root {
+		t.Fatalf("unexpected --by cwd report: %+v", report)
 	}
 }
 
 func TestStatsCommandRejectsUnknownGrouping(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	cmd := newTestRootCommand(t, &stdout, &stderr)
-	cmd.SetArgs([]string{"stats", "--by", "cost"})
+	cmd.SetArgs([]string{"stats", "--by", "project"})
 	if err := cmd.ExecuteContext(context.Background()); err == nil || !strings.Contains(err.Error(), "unknown --by value") {
-		t.Fatalf("expected invalid --by error, got %v", err)
+		t.Fatalf("expected project grouping to be rejected, got %v", err)
 	}
 }

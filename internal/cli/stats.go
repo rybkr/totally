@@ -61,7 +61,7 @@ func newStatsCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.cwd, "cwd", "", "limit to sessions in this working directory")
 	cmd.Flags().StringVar(&opts.provider, "provider", "", "limit to sessions from this provider")
 	cmd.Flags().StringVar(&opts.model, "model", "", "limit to sessions using this model")
-	cmd.Flags().StringVar(&opts.by, "by", "", "group by cwd, model, provider, day, week, month, or session (project is an alias for cwd)")
+	cmd.Flags().StringVar(&opts.by, "by", "", "group by cwd, model, provider, day, week, month, or session")
 	cmd.Flags().BoolVar(&opts.pretty, "pretty", false, "use terminal-oriented table output")
 	return cmd
 }
@@ -74,7 +74,6 @@ func runStats(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts 
 		}
 		opts.cwd = cwd
 	}
-	opts.by = canonicalStatsBy(opts.by)
 	if err := validateStatsBy(opts.by); err != nil {
 		return usageError{err: err}
 	}
@@ -110,16 +109,9 @@ func runStats(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts 
 	return printGroupedStatsReport(stdout, report)
 }
 
-func canonicalStatsBy(by string) string {
-	if by == "project" {
-		return "cwd"
-	}
-	return by
-}
-
 func validateStatsBy(by string) error {
 	switch by {
-	case "", "cwd", "project", "model", "provider", "day", "week", "month", "session":
+	case "", "cwd", "model", "provider", "day", "week", "month", "session":
 		return nil
 	default:
 		return fmt.Errorf("unknown --by value %q: expected cwd, model, provider, day, week, month, or session", by)
@@ -218,7 +210,7 @@ func groupStatsRecordByModel(groups map[string][]groupedStatsRecord, record sess
 func statsGroupKeys(record session.Record, by string) []string {
 	unknown := "(unknown)"
 	switch by {
-	case "cwd", "project":
+	case "cwd":
 		if record.CWD != "" {
 			return []string{record.CWD}
 		}
