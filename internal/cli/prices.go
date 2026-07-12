@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/rybkr/totally/internal/pricing"
@@ -54,7 +55,13 @@ func runPricesVerify(cmd *cobra.Command, stdout io.Writer, globals globalOptions
 		report.Valid = false
 		report.Issues = append(report.Issues, pricesVerifyIssue{Path: globals.config, Message: globals.priceConfigErr.Error()})
 	} else {
-		for key, value := range globals.priceConfig {
+		keys := make([]string, 0, len(globals.priceConfig))
+		for key := range globals.priceConfig {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			value := globals.priceConfig[key]
 			report.Overrides++
 			path := `prices."` + key + `"`
 			parts := strings.Split(key, "/")
@@ -90,6 +97,12 @@ func runPricesVerify(cmd *cobra.Command, stdout io.Writer, globals globalOptions
 			report.Valid = false
 		}
 	}
+	sort.Slice(report.Issues, func(i, j int) bool {
+		if report.Issues[i].Path == report.Issues[j].Path {
+			return report.Issues[i].Message < report.Issues[j].Message
+		}
+		return report.Issues[i].Path < report.Issues[j].Path
+	})
 	if globals.format == outputFormatJSON {
 		if err := json.NewEncoder(stdout).Encode(report); err != nil {
 			return err
@@ -100,18 +113,32 @@ func runPricesVerify(cmd *cobra.Command, stdout io.Writer, globals globalOptions
 		return nil
 	}
 	if report.Valid {
-		_, err := fmt.Fprintf(stdout, "Pricing configuration is valid.\n  overrides: %d\n  bundled catalog: %s\n", report.Overrides, report.CatalogVersion)
+		_, err := fmt.Fprintf(stdout, "Pricing configuration is valid.\n\n  config: %s\n  overrides checked: %d\n  bundled catalog: %s\n", priceConfigLabel(report.Config), report.Overrides, report.CatalogVersion)
 		return err
 	}
-	if _, err := fmt.Fprintf(stdout, "Pricing configuration has %d issue(s):\n", len(report.Issues)); err != nil {
+	if _, err := fmt.Fprintf(stdout, "Pricing configuration is invalid (%d %s).\n\n  config: %s\n  overrides checked: %d\n  bundled catalog: %s\n\n", len(report.Issues), priceErrorLabel(len(report.Issues)), priceConfigLabel(report.Config), report.Overrides, report.CatalogVersion); err != nil {
 		return err
 	}
 	for _, issue := range report.Issues {
-		if _, err := fmt.Fprintf(stdout, "\n  %s\n    %s\n", issue.Path, issue.Message); err != nil {
+		if _, err := fmt.Fprintf(stdout, "  %s\n    %s\n\n", issue.Path, issue.Message); err != nil {
 			return err
 		}
 	}
 	return fmt.Errorf("pricing configuration is invalid")
+}
+
+func priceConfigLabel(config string) string {
+	if config == "" {
+		return "built-in defaults (no config file)"
+	}
+	return config
+}
+
+func priceErrorLabel(count int) string {
+	if count == 1 {
+		return "error"
+	}
+	return "errors"
 }
 
 func decodeConfiguredRate(provider, model string, fields map[string]any, path string) (pricing.Rate, []pricesVerifyIssue) {

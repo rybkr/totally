@@ -74,3 +74,23 @@ unknown = "value"
 		t.Fatalf("unexpected verification report: %+v", result)
 	}
 }
+
+func TestPricesVerifyPrintsDiagnosticOutput(t *testing.T) {
+	config := writeConfig(t, `[prices."openai/gpt-5"]
+input_per_million_usd = "invalid"
+cached_input_per_million_usd = "0.1"
+output_per_million_usd = "12"
+`)
+	var stdout, stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"prices", "verify", "--config", config})
+	if err := cmd.ExecuteContext(context.Background()); err == nil {
+		t.Fatal("expected verification failure")
+	}
+	output := stdout.String()
+	for _, want := range []string{"Pricing configuration is invalid (1 error).", "config: " + config, `prices."openai/gpt-5".input_per_million_usd`} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("missing %q in:\n%s", want, output)
+		}
+	}
+}
