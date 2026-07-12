@@ -63,6 +63,12 @@ type Estimate struct {
 
 type Catalog struct{ rates []Rate }
 
+// ValidationIssue identifies one invalid field in a configured rate.
+type ValidationIssue struct {
+	Field   string `json:"field"`
+	Message string `json:"message"`
+}
+
 func DefaultCatalog() Catalog {
 	return Catalog{rates: append([]Rate(nil), loadedBundledCatalog.rates...)}
 }
@@ -75,12 +81,67 @@ func (c Catalog) Rates() []Rate {
 	return rates
 }
 
+// Validate checks that every effective rate can be used to estimate a cost.
+// It is intentionally exported so callers that assemble a catalog from user
+// configuration can diagnose it without attempting an estimate first.
+func (c Catalog) Validate() error {
+	for _, rate := range c.rates {
+		if issues := ValidateRate(rate); len(issues) > 0 {
+			return fmt.Errorf("invalid %s/%s %s: %s", rate.Provider, rate.Model, issues[0].Field, issues[0].Message)
+		}
+	}
+	return nil
+}
+
+// ValidateRate returns every invalid field in a configured rate.
+func ValidateRate(rate Rate) []ValidationIssue {
+	var issues []ValidationIssue
+	add := func(field string, err error) {
+		if err != nil {
+			issues = append(issues, ValidationIssue{Field: field, Message: err.Error()})
+		}
+	}
+	if rate.Provider == "" {
+		issues = append(issues, ValidationIssue{Field: "provider", Message: "is required"})
+	}
+	if rate.Model == "" {
+		issues = append(issues, ValidationIssue{Field: "model", Message: "is required"})
+	}
+	var from, until time.Time
+	if rate.EffectiveFrom != "" {
+		parsed, err := time.Parse(time.DateOnly, rate.EffectiveFrom)
+		add("effective_from", err)
+		from = parsed
+	}
+	if rate.EffectiveUntil != "" {
+		parsed, err := time.Parse(time.DateOnly, rate.EffectiveUntil)
+		add("effective_until", err)
+		until = parsed
+	}
+	if !from.IsZero() && !until.IsZero() && !from.Before(until) {
+		issues = append(issues, ValidationIssue{Field: "effective_until", Message: "must be after effective_from"})
+	}
+	for _, value := range []struct{ field, value string }{{"input_per_million_usd", rate.InputPerMillionUSD}, {"cached_input_per_million_usd", rate.CachedInputPerMillionUSD}, {"output_per_million_usd", rate.OutputPerMillionUSD}, {"cache_write_per_million_usd", rate.CacheWritePerMillionUSD}} {
+		if value.value != "" {
+			add(value.field, func() error { _, err := parseUSDNanos(value.value); return err }())
+		} else if value.field != "cache_write_per_million_usd" {
+			issues = append(issues, ValidationIssue{Field: value.field, Message: "is required"})
+		}
+	}
+	for _, value := range []struct{ field, value string }{{"long_context_input_scale", rate.LongContextInputScale}, {"long_context_cached_input_scale", rate.LongContextCachedInputScale}, {"long_context_output_scale", rate.LongContextOutputScale}, {"cache_write_input_scale", rate.CacheWriteInputScale}} {
+		if value.value != "" {
+			add(value.field, func() error { _, err := parseScale(value.value); return err }())
+		}
+	}
+	return issues
+}
+
 func (c *Catalog) Override(rate Rate) error {
 	if rate.Provider == "" || rate.Model == "" {
 		return fmt.Errorf("price override requires provider and model")
 	}
-	if _, err := parseRate(rate); err != nil {
-		return err
+	if issues := ValidateRate(rate); len(issues) > 0 {
+		return fmt.Errorf("invalid %s/%s %s: %s", rate.Provider, rate.Model, issues[0].Field, issues[0].Message)
 	}
 	if rate.Source == "" {
 		rate.Source = "user"

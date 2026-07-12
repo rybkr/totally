@@ -44,15 +44,17 @@ func ExitCode(err error) int {
 }
 
 type globalOptions struct {
-	config   string
-	agent    string
-	homes    []string
-	archived bool
-	since    string
-	until    string
-	format   string
-	noPager  bool
-	prices   pricing.Catalog
+	config         string
+	agent          string
+	homes          []string
+	archived       bool
+	since          string
+	until          string
+	format         string
+	noPager        bool
+	prices         pricing.Catalog
+	priceConfig    map[string]any
+	priceConfigErr error
 }
 
 type timeRange struct {
@@ -102,11 +104,18 @@ func loadGlobalOptions(cmd *cobra.Command, opts *globalOptions) error {
 	if err := v.ReadInConfig(); err != nil {
 		var notFound viper.ConfigFileNotFoundError
 		if configPath != "" || !errors.As(err, &notFound) {
-			return err
+			if isPricesVerify(cmd) {
+				opts.priceConfigErr = err
+			} else {
+				return err
+			}
 		}
 	}
 
-	opts.config = configPath
+	opts.config = v.ConfigFileUsed()
+	if opts.config == "" {
+		opts.config = configPath
+	}
 	opts.agent = v.GetString("agent")
 	opts.homes = normalizeHomeValues(v.GetStringSlice("home"))
 	opts.archived = v.GetBool("archived")
@@ -126,6 +135,10 @@ func loadGlobalOptions(cmd *cobra.Command, opts *globalOptions) error {
 	}
 	opts.format = strings.TrimSpace(strings.ToLower(v.GetString("format")))
 	opts.prices = pricing.DefaultCatalog()
+	opts.priceConfig = v.GetStringMap("prices")
+	if isPricesVerify(cmd) {
+		return validateOutputFormat(opts.format)
+	}
 	var overrides map[string]pricing.Rate
 	if err := v.UnmarshalKey("prices", &overrides); err != nil {
 		return fmt.Errorf("decode prices: %w", err)
@@ -145,6 +158,10 @@ func loadGlobalOptions(cmd *cobra.Command, opts *globalOptions) error {
 	}
 
 	return nil
+}
+
+func isPricesVerify(cmd *cobra.Command) bool {
+	return cmd.Name() == "verify" && cmd.Parent() != nil && cmd.Parent().Name() == "prices"
 }
 
 func validateOutputFormat(format string) error {

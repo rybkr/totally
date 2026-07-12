@@ -126,12 +126,17 @@ breaking ties), so group totals remain additive.
 totally prices
 totally prices --model gpt-5
 totally prices --format json
+totally prices verify
 ```
 
 Pricing output shows the configured rates per million tokens for input, cached
 input, and output, plus the source and effective date/version.
 Costs are estimates based on this local price table, not vendor invoice
 reconciliation.
+
+`totally prices verify` validates configured pricing overrides and prints
+field-level diagnostics for malformed keys, unknown fields, invalid monetary
+values, scales, and effective dates. It does not scan session files.
 
 Built-in prices can be replaced in the Totally TOML configuration. Override
 keys use `provider/model`, and monetary values are decimal strings:

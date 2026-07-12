@@ -52,3 +52,25 @@ source = "user"
 		t.Fatalf("unexpected rates: %+v", result.Rates)
 	}
 }
+
+func TestPricesVerifyReportsAllConfigIssues(t *testing.T) {
+	config := writeConfig(t, `[prices."openai/gpt-5"]
+input_per_million_usd = "1"
+cached_input_per_million_usd = "0.1"
+output_per_million_usd = "nope"
+unknown = "value"
+`)
+	var stdout, stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"prices", "verify", "--config", config, "--format", "json"})
+	if err := cmd.ExecuteContext(context.Background()); err == nil {
+		t.Fatal("expected verification failure")
+	}
+	var result pricesVerifyReport
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Valid || len(result.Issues) != 2 {
+		t.Fatalf("unexpected verification report: %+v", result)
+	}
+}
