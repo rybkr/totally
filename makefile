@@ -1,5 +1,5 @@
 .PHONY: help \
-	bundle build format test \
+	build format test \
 	clean
 
 GOCMD = go
@@ -10,8 +10,11 @@ GOCLEAN = $(GOCMD) clean
 BINARY = totally
 DIST_DIR = dist
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
+DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 OS ?= $(shell go env GOOS)
 ARCH ?= $(shell go env GOARCH)
+LDFLAGS = -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
 .DEFAULT_GOAL := help
 
@@ -52,19 +55,14 @@ help:
 	' $(MAKEFILE_LIST)
 
 ##@ Build
-## bundle: Build a compressed release bundle
+## build: Build a compressed release bundle
 ##   options: VERSION=..., OS=..., ARCH=...
-bundle: build
+build:
 	@echo "Bundling $(BINARY) $(VERSION) for $(OS)/$(ARCH)..."
+	@mkdir -p "$(DIST_DIR)"
+	GOOS="$(OS)" GOARCH="$(ARCH)" $(GOBUILD) -trimpath -ldflags "$(LDFLAGS)" -o "$(DIST_DIR)/$(BINARY)" ./cmd/totally
 	@tar -C "$(DIST_DIR)" -czf "$(DIST_DIR)/$(BINARY)-$(VERSION)-$(OS)-$(ARCH).tar.gz" "$(BINARY)"
 	@echo "Bundle written to $(DIST_DIR)/$(BINARY)-$(VERSION)-$(OS)-$(ARCH).tar.gz"
-
-## build: Build the CLI binary
-##   options: OS=..., ARCH=...
-build:
-	@echo "Building $(BINARY) for $(OS)/$(ARCH)..."
-	@mkdir -p "$(DIST_DIR)"
-	GOOS="$(OS)" GOARCH="$(ARCH)" $(GOBUILD) -v -o "$(DIST_DIR)/$(BINARY)" ./cmd/totally
 
 ##@ Code Quality
 ## format: Format Go source
