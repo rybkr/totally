@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rybkr/totally/internal/pricing"
 	"github.com/rybkr/totally/internal/session"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -25,6 +26,15 @@ type sessionsOptions struct {
 	ids     bool
 	paths   bool
 	full    bool
+}
+
+// sessionListReport adds derived, comparison-oriented fields to the normalized
+// session record without changing the underlying parser contract.
+type sessionListReport struct {
+	session.Record
+	DurationSeconds *int64           `json:"duration_seconds,omitempty"`
+	CostUSD         float64          `json:"cost_usd"`
+	Cost            pricing.Estimate `json:"cost"`
 }
 
 func newSessionsCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
@@ -100,14 +110,14 @@ func runSessions(cmd *cobra.Command, stdout io.Writer, globals globalOptions, op
 		terminalWidth, _ := outputTerminalWidth(stdout)
 		if shouldPageTable(stdout, globals.noPager) {
 			var table bytes.Buffer
-			if err := printSessionsTableWithWidth(&table, records, opts.full, terminalWidth); err != nil {
+			if err := printSessionsTableWithWidth(&table, records, globals.prices, opts.full, terminalWidth); err != nil {
 				return err
 			}
 			return pageTableOutput(cmd, stdout, table.Bytes())
 		}
-		return printSessionsTableWithWidth(stdout, records, opts.full, terminalWidth)
+		return printSessionsTableWithWidth(stdout, records, globals.prices, opts.full, terminalWidth)
 	case outputFormatJSON:
-		return json.NewEncoder(stdout).Encode(records)
+		return json.NewEncoder(stdout).Encode(newSessionListReports(records, globals.prices))
 	default:
 		return fmt.Errorf("unknown format %q", globals.format)
 	}
@@ -201,21 +211,26 @@ func parseSessionFilesWithParsers(cmd *cobra.Command, parsers []session.Parser, 
 	return records, nil
 }
 
-func printSessionsTable(w io.Writer, records []session.Record, full bool) error {
-	return printSessionsTableWithWidth(w, records, full, 0)
+func printSessionsTable(w io.Writer, records []session.Record, catalog pricing.Catalog, full bool) error {
+	return printSessionsTableWithWidth(w, records, catalog, full, 0)
 }
 
-func printSessionsTableWithWidth(w io.Writer, records []session.Record, full bool, terminalWidth int) error {
-	if _, err := fmt.Fprintln(w, "SESSION ID\tCWD\tPROMPT"); err != nil {
+func printSessionsTableWithWidth(w io.Writer, records []session.Record, catalog pricing.Catalog, full bool, terminalWidth int) error {
+	if _, err := fmt.Fprintln(w, "SESSION ID\tSTARTED\tCWD\tMODEL\tTOKENS\tCOST\tDURATION\tPROMPT"); err != nil {
 		return err
 	}
 	home, _ := os.UserHomeDir()
 	for _, record := range records {
 		sessionID := formatSessionID(record.SessionID)
+		started := formatTime(record.CreatedAt)
 		cwd := shortenSessionCWD(record.CWD, home)
+		model := fallback(strings.Join(record.Models, ","))
+		tokens := formatCompactNumber(record.TokenUsage.TotalTokens)
+		cost := formatSessionListCost(catalog.Estimate(record.UsageSegments, record.CreatedAt))
+		duration := fallback(formatDurationSeconds(sessionDurationSeconds(record)))
 		promptMaxWidth := sessionPromptMaxRunes
 		if terminalWidth > 0 {
-			promptMaxWidth = sessionPromptMaxForTerminalWidth(terminalWidth, sessionID, cwd)
+			promptMaxWidth = sessionPromptMaxForTerminalWidth(terminalWidth, sessionID, started, cwd, model, tokens, cost, duration)
 		}
 		prompt := formatSessionPromptToWidth(record.FirstPrompt, promptMaxWidth)
 		if full {
@@ -224,15 +239,53 @@ func printSessionsTableWithWidth(w io.Writer, records []session.Record, full boo
 		}
 		if _, err := fmt.Fprintf(
 			w,
-			"%s\t%s\t%s\n",
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			sessionID,
+			started,
 			cwd,
+			model,
+			tokens,
+			cost,
+			duration,
 			prompt,
 		); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func newSessionListReports(records []session.Record, catalog pricing.Catalog) []sessionListReport {
+	reports := make([]sessionListReport, 0, len(records))
+	for _, record := range records {
+		estimate := catalog.Estimate(record.UsageSegments, record.CreatedAt)
+		reports = append(reports, sessionListReport{
+			Record:          record,
+			DurationSeconds: sessionDurationSeconds(record),
+			CostUSD:         pricing.FloatAmount(estimate),
+			Cost:            estimate,
+		})
+	}
+	return reports
+}
+
+func sessionDurationSeconds(record session.Record) *int64 {
+	if record.CreatedAt.IsZero() || record.UpdatedAt.IsZero() || record.UpdatedAt.Before(record.CreatedAt) {
+		return nil
+	}
+	duration := int64(record.UpdatedAt.Sub(record.CreatedAt).Seconds())
+	return &duration
+}
+
+func formatSessionListCost(cost pricing.Estimate) string {
+	if cost.AmountUSD == nil {
+		return "-"
+	}
+	prefix := "$"
+	if cost.Status == "partial" || cost.UncertaintyUSD != nil {
+		prefix = "~$"
+	}
+	return prefix + *cost.AmountUSD
 }
 
 const (
@@ -268,8 +321,11 @@ func formatSessionPrompt(prompt string) string {
 	return formatSessionPromptToWidth(prompt, sessionPromptMaxRunes)
 }
 
-func sessionPromptMaxForTerminalWidth(terminalWidth int, sessionID, cwd string) int {
-	promptStart := nextTabStop(nextTabStop(displayWidth(sessionID)) + displayWidth(cwd))
+func sessionPromptMaxForTerminalWidth(terminalWidth int, columns ...string) int {
+	promptStart := 0
+	for _, column := range columns {
+		promptStart = nextTabStop(promptStart + displayWidth(column))
+	}
 	available := terminalWidth - promptStart
 	if available < sessionPromptMinRunes {
 		return sessionPromptMinRunes

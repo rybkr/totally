@@ -50,8 +50,8 @@ inspect a specific home or combine several homes in one report.
 ## Find sessions
 
 `sessions` answers “which session was that?” Its table includes the session ID,
-working directory, first prompt/task descriptor, start time, model, estimated cost, and
-token use.
+working directory, first prompt/task descriptor, start time, model, token use,
+estimated cost, and duration.
 
 ```sh
 totally sessions

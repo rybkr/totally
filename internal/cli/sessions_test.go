@@ -26,8 +26,9 @@ func TestSessionsCommandPrintsTable(t *testing.T) {
 
 	output := stdout.String()
 	for _, want := range []string{
-		"SESSION ID\tCWD\tPROMPT",
-		"019f44e4-5c01\t/tmp/project\tExplain this session",
+		"SESSION ID\tSTARTED\tCWD\tMODEL\tTOKENS\tCOST\tDURATION\tPROMPT",
+		"019f44e4-5c01\t2026-07-09T03:20:44Z\t/tmp/project\tgpt-5,gpt-5-mini\t125\t$",
+		"\t4s\tExplain this session",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("missing %q in output:\n%s", want, output)
@@ -48,7 +49,7 @@ func TestSessionsCommandFullPrintsFullSessionID(t *testing.T) {
 	if err := cmd.ExecuteContext(context.Background()); err != nil {
 		t.Fatalf("run failed: %v\\nstderr: %s", err, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), sessionID+"\t/tmp/project\tExplain this session") {
+	if !strings.Contains(stdout.String(), sessionID+"\t2026-07-09T03:20:44Z\t/tmp/project") {
 		t.Fatalf("expected full session ID in output:\\n%s", stdout.String())
 	}
 }
@@ -71,7 +72,7 @@ func TestSessionsCommandNoPagerPrintsTableDirectly(t *testing.T) {
 	if err := cmd.ExecuteContext(context.Background()); err != nil {
 		t.Fatalf("run failed: %v\nstderr: %s", err, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "SESSION ID\tCWD\tPROMPT") {
+	if !strings.Contains(stdout.String(), "SESSION ID\tSTARTED\tCWD\tMODEL\tTOKENS\tCOST\tDURATION\tPROMPT") {
 		t.Fatalf("expected direct table output, got:\n%s", stdout.String())
 	}
 }
@@ -151,6 +152,11 @@ func TestSessionsCommandPrintsJSON(t *testing.T) {
 	}
 	if _, ok := usage["reasoning_output_tokens"]; !ok {
 		t.Fatalf("missing reasoning_output_tokens: %s", stdout.String())
+	}
+	for _, key := range []string{"duration_seconds", "cost_usd", "cost"} {
+		if _, ok := document[0][key]; !ok {
+			t.Fatalf("missing %s: %s", key, stdout.String())
+		}
 	}
 }
 
