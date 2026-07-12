@@ -100,17 +100,20 @@ Use `--by` to compare one dimension at a time.
 
 ```sh
 totally stats --since 7d
-totally stats --project totally --since 30d
+totally stats --cwd . --since 30d
 totally stats --since 30d --by project
 totally stats --since 30d --by model
-totally stats --project totally --by day --pretty
+totally stats --cwd . --by day --pretty
 ```
 
 ```text
 --by project|model|provider|day|week|month|session
---pretty                        Terminal-oriented presentation and, for time
-                                groupings, an ASCII chart
+--pretty                        Terminal-oriented table output
 ```
+
+The currently available session selectors are `--cwd`, `--provider`, and
+`--model` (along with the global `--since`, `--until`, `--archived`, `--home`,
+and `--format` flags). `--by project` groups by session working directory.
 
 ## Pricing
 
