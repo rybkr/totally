@@ -14,7 +14,14 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 OS ?= $(shell go env GOOS)
 ARCH ?= $(shell go env GOARCH)
+CGO_ENABLED ?= $(shell go env CGO_ENABLED)
 LDFLAGS = -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
+
+# Linux release binaries must run on distributions with older glibc versions.
+# Disabling cgo produces a self-contained executable without a glibc dependency.
+ifeq ($(OS),linux)
+CGO_ENABLED := 0
+endif
 
 .DEFAULT_GOAL := help
 
@@ -60,7 +67,7 @@ help:
 build:
 	@echo "Bundling $(BINARY) $(VERSION) for $(OS)/$(ARCH)..."
 	@mkdir -p "$(DIST_DIR)"
-	GOOS="$(OS)" GOARCH="$(ARCH)" $(GOBUILD) -trimpath -ldflags "$(LDFLAGS)" -o "$(DIST_DIR)/$(BINARY)" ./cmd/totally
+	GOOS="$(OS)" GOARCH="$(ARCH)" CGO_ENABLED="$(CGO_ENABLED)" $(GOBUILD) -trimpath -ldflags "$(LDFLAGS)" -o "$(DIST_DIR)/$(BINARY)" ./cmd/totally
 	@tar -C "$(DIST_DIR)" -czf "$(DIST_DIR)/$(BINARY)-$(VERSION)-$(OS)-$(ARCH).tar.gz" "$(BINARY)"
 	@echo "Bundle written to $(DIST_DIR)/$(BINARY)-$(VERSION)-$(OS)-$(ARCH).tar.gz"
 
