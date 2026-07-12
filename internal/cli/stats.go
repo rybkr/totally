@@ -21,7 +21,7 @@ type statsOptions struct {
 	cwd      string
 	provider string
 	model    string
-	by       string
+	by       []string
 	pretty   bool
 }
 
@@ -38,20 +38,22 @@ type statsReport struct {
 }
 
 type groupedStatsReport struct {
-	By     string           `json:"by"`
-	Total  statsReport      `json:"total"`
-	Groups []statsReportRow `json:"groups"`
+	By           string           `json:"by"`
+	ByDimensions []string         `json:"by_dimensions,omitempty"`
+	Total        statsReport      `json:"total"`
+	Groups       []statsReportRow `json:"groups"`
 }
 
 type statsReportRow struct {
-	Group string      `json:"group"`
-	Stats statsReport `json:"stats"`
+	Group  string      `json:"group"`
+	Values []string    `json:"values,omitempty"`
+	Stats  statsReport `json:"stats"`
 }
 
 func newStatsCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
 	var opts statsOptions
 	cmd := &cobra.Command{
-		Use:   "stats [--cwd PATH] [--provider NAME] [--model NAME] [--by DIMENSION]",
+		Use:   "stats [--cwd PATH] [--provider NAME] [--model NAME] [--by DIMENSION]...",
 		Short: "Aggregate session activity, token use, and estimated cost",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -61,7 +63,7 @@ func newStatsCommand(stdout io.Writer, globals *globalOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.cwd, "cwd", "", "limit to sessions in this working directory")
 	cmd.Flags().StringVar(&opts.provider, "provider", "", "limit to sessions from this provider")
 	cmd.Flags().StringVar(&opts.model, "model", "", "limit to sessions using this model")
-	cmd.Flags().StringVar(&opts.by, "by", "", "group by cwd, model, provider, day, week, month, or session")
+	cmd.Flags().StringArrayVar(&opts.by, "by", nil, "group by cwd, model, provider, day, week, month, or session; may be repeated")
 	cmd.Flags().BoolVar(&opts.pretty, "pretty", false, "use terminal-oriented table output")
 	return cmd
 }
@@ -87,21 +89,33 @@ func runStats(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts 
 	}
 	records = filterStatsRecords(records, opts)
 	total := summarizeStats(records, globals.prices)
-	if opts.by == "" {
+	if len(opts.by) == 0 {
 		if globals.format == outputFormatJSON {
 			return json.NewEncoder(stdout).Encode(total)
 		}
 		return printStatsReport(stdout, total)
 	}
 	groups := groupStatsRecords(records, opts.by)
-	report := groupedStatsReport{By: opts.by, Total: total, Groups: make([]statsReportRow, 0, len(groups))}
+	report := groupedStatsReport{By: strings.Join(opts.by, ","), Total: total, Groups: make([]statsReportRow, 0, len(groups))}
+	if len(opts.by) > 1 {
+		report.ByDimensions = opts.by
+	}
 	keys := make([]string, 0, len(groups))
 	for key := range groups {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		report.Groups = append(report.Groups, statsReportRow{Group: key, Stats: summarizeGroupedStats(groups[key], globals.prices)})
+		values := strings.Split(key, "\x1f")
+		group := values[0]
+		if len(values) > 1 {
+			group = strings.Join(values, " / ")
+		}
+		row := statsReportRow{Group: group, Stats: summarizeGroupedStats(groups[key], globals.prices)}
+		if len(values) > 1 {
+			row.Values = values
+		}
+		report.Groups = append(report.Groups, row)
 	}
 	if globals.format == outputFormatJSON {
 		return json.NewEncoder(stdout).Encode(report)
@@ -109,13 +123,20 @@ func runStats(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts 
 	return printGroupedStatsReport(stdout, report)
 }
 
-func validateStatsBy(by string) error {
-	switch by {
-	case "", "cwd", "model", "provider", "day", "week", "month", "session":
-		return nil
-	default:
-		return fmt.Errorf("unknown --by value %q: expected cwd, model, provider, day, week, month, or session", by)
+func validateStatsBy(by []string) error {
+	seen := make(map[string]struct{}, len(by))
+	for _, dimension := range by {
+		switch dimension {
+		case "cwd", "model", "provider", "day", "week", "month", "session":
+		default:
+			return fmt.Errorf("unknown --by value %q: expected cwd, model, provider, day, week, month, or session", dimension)
+		}
+		if _, ok := seen[dimension]; ok {
+			return fmt.Errorf("duplicate --by value %q", dimension)
+		}
+		seen[dimension] = struct{}{}
 	}
+	return nil
 }
 
 func filterStatsRecords(records []session.Record, opts statsOptions) []session.Record {
@@ -143,19 +164,33 @@ type groupedStatsRecord struct {
 	IncludeSessionStats bool
 }
 
-func groupStatsRecords(records []session.Record, by string) map[string][]groupedStatsRecord {
+func groupStatsRecords(records []session.Record, by []string) map[string][]groupedStatsRecord {
 	groups := make(map[string][]groupedStatsRecord)
 	for _, record := range records {
-		if by == "model" {
-			groupStatsRecordByModel(groups, record)
-			continue
+		attributed := []groupedStatsRecord{{Record: record, IncludeSessionStats: true}}
+		if containsStatsDimension(by, "model") {
+			attributed = groupStatsRecordsByModel(record)
 		}
-		keys := statsGroupKeys(record, by)
-		for _, key := range keys {
-			groups[key] = append(groups[key], groupedStatsRecord{Record: record, IncludeSessionStats: true})
+		for _, grouped := range attributed {
+			values := make([]string, 0, len(by))
+			for _, dimension := range by {
+				keys := statsGroupKeys(grouped.Record, dimension)
+				values = append(values, keys[0])
+			}
+			key := strings.Join(values, "\x1f")
+			groups[key] = append(groups[key], grouped)
 		}
 	}
 	return groups
+}
+
+func containsStatsDimension(dimensions []string, target string) bool {
+	for _, dimension := range dimensions {
+		if dimension == target {
+			return true
+		}
+	}
+	return false
 }
 
 // groupStatsRecordByModel attributes tokens and pricing from each usage segment
@@ -164,6 +199,12 @@ func groupStatsRecords(records []session.Record, by string) map[string][]grouped
 // This keeps model groups additive without inventing fractional sessions or
 // activity counts.
 func groupStatsRecordByModel(groups map[string][]groupedStatsRecord, record session.Record) {
+	for _, attributed := range groupStatsRecordsByModel(record) {
+		groups[attributed.Record.Models[0]] = append(groups[attributed.Record.Models[0]], attributed)
+	}
+}
+
+func groupStatsRecordsByModel(record session.Record) []groupedStatsRecord {
 	segmentsByModel := make(map[string][]session.UsageSegment)
 	models := make([]string, 0, len(record.UsageSegments))
 	for _, segment := range record.UsageSegments {
@@ -180,12 +221,13 @@ func groupStatsRecordByModel(groups map[string][]groupedStatsRecord, record sess
 		if len(record.Models) > 0 && record.Models[0] != "" {
 			key = record.Models[0]
 		}
-		groups[key] = append(groups[key], groupedStatsRecord{Record: record, IncludeSessionStats: true})
-		return
+		record.Models = []string{key}
+		return []groupedStatsRecord{{Record: record, IncludeSessionStats: true}}
 	}
 
 	primary := models[0]
 	var primaryTokens int64 = -1
+	result := make([]groupedStatsRecord, 0, len(models))
 	for _, model := range models {
 		var tokens int64
 		for _, segment := range segmentsByModel[model] {
@@ -203,8 +245,9 @@ func groupStatsRecordByModel(groups map[string][]groupedStatsRecord, record sess
 		for _, segment := range attributed.UsageSegments {
 			addTokenUsage(&attributed.TokenUsage, segment.TokenUsage)
 		}
-		groups[model] = append(groups[model], groupedStatsRecord{Record: attributed, IncludeSessionStats: model == primary})
+		result = append(result, groupedStatsRecord{Record: attributed, IncludeSessionStats: model == primary})
 	}
+	return result
 }
 
 func statsGroupKeys(record session.Record, by string) []string {
@@ -346,11 +389,23 @@ func printStatsReport(w io.Writer, report statsReport) error {
 }
 
 func printGroupedStatsReport(w io.Writer, report groupedStatsReport) error {
-	if _, err := fmt.Fprintf(w, "GROUP\tSESSIONS\tPROMPTS\tDURATION\tTOKENS\tCOST\n"); err != nil {
+	dimensions := report.ByDimensions
+	if len(dimensions) == 0 {
+		dimensions = []string{report.By}
+	}
+	groupColumns := make([]string, len(dimensions))
+	for i, dimension := range dimensions {
+		groupColumns[i] = strings.ToUpper(dimension)
+	}
+	if _, err := fmt.Fprintf(w, "%s\tSESSIONS\tPROMPTS\tDURATION\tTOKENS\tCOST\n", strings.Join(groupColumns, "\t")); err != nil {
 		return err
 	}
 	for _, row := range report.Groups {
-		if _, err := fmt.Fprintf(w, "%s\t%d\t%d\t%s\t%s\t%s\n", row.Group, row.Stats.Sessions, row.Stats.Prompts, fallback(formatDurationSeconds(&row.Stats.DurationSeconds)), formatCompactNumber(row.Stats.TokenUsage.TotalTokens), formatCostEstimate(row.Stats.Cost)); err != nil {
+		values := row.Values
+		if len(values) == 0 {
+			values = []string{row.Group}
+		}
+		if _, err := fmt.Fprintf(w, "%s\t%d\t%d\t%s\t%s\t%s\n", strings.Join(values, "\t"), row.Stats.Sessions, row.Stats.Prompts, fallback(formatDurationSeconds(&row.Stats.DurationSeconds)), formatCompactNumber(row.Stats.TokenUsage.TotalTokens), formatCostEstimate(row.Stats.Cost)); err != nil {
 			return err
 		}
 	}

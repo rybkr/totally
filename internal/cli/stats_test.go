@@ -51,7 +51,7 @@ func TestGroupStatsRecordsByModelAttributesUsageAndAssignsSessionStatsOnce(t *te
 		},
 	}
 
-	groups := groupStatsRecords([]session.Record{record}, "model")
+	groups := groupStatsRecords([]session.Record{record}, []string{"model"})
 	primary := summarizeGroupedStats(groups["gpt-5"], pricing.DefaultCatalog())
 	secondary := summarizeGroupedStats(groups["gpt-5-mini"], pricing.DefaultCatalog())
 	if primary.Sessions != 1 || primary.Prompts != 1 || primary.DurationSeconds != 120 || primary.Turns != 3 || primary.Messages != 5 || primary.ToolCalls != 2 || primary.TokenUsage.TotalTokens != 100 {
@@ -107,6 +107,32 @@ func TestStatsCommandGroupsByCWD(t *testing.T) {
 	}
 	if report.By != "cwd" || len(report.Groups) != 1 || report.Groups[0].Group != root {
 		t.Fatalf("unexpected --by cwd report: %+v", report)
+	}
+}
+
+func TestStatsCommandGroupsByCompositeDimensions(t *testing.T) {
+	root := t.TempDir()
+	first := "019f44e4-5c01-7d22-9805-50cecaefde49"
+	second := "019f44e4-5c01-7d22-9805-50cecaefde50"
+	writeRolloutContents(t, root, "sessions/2026/07/08/rollout-2026-07-08T20-20-44-"+first+".jsonl", inspectFixtureForSession(first))
+	contents := strings.ReplaceAll(inspectFixtureForSession(second), "gpt-5-mini", "gpt-5")
+	writeRolloutContents(t, root, "sessions/2026/07/09/rollout-2026-07-09T20-20-44-"+second+".jsonl", contents)
+
+	var stdout, stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"stats", "--home", root, "--by", "day", "--by", "model", "--format", "json"})
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("run failed: %v\\nstderr: %s", err, stderr.String())
+	}
+	var report groupedStatsReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode report: %v\\n%s", err, stdout.String())
+	}
+	if report.By != "day,model" || strings.Join(report.ByDimensions, ",") != "day,model" {
+		t.Fatalf("unexpected dimensions: by=%q dimensions=%v", report.By, report.ByDimensions)
+	}
+	if len(report.Groups) != 2 || report.Groups[0].Group != "2026-07-08 / gpt-5" || report.Groups[1].Group != "2026-07-08 / gpt-5-mini" || strings.Join(report.Groups[0].Values, ",") != "2026-07-08,gpt-5" {
+		t.Fatalf("unexpected composite groups: %+v", report.Groups)
 	}
 }
 
