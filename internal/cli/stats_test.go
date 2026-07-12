@@ -46,8 +46,8 @@ func TestGroupStatsRecordsByModelAttributesUsageAndAssignsSessionStatsOnce(t *te
 		Turns: 3, Messages: 5, ToolCalls: 2,
 		TokenUsage: session.TokenUsage{TotalTokens: 150},
 		UsageSegments: []session.UsageSegment{
-			{Model: "gpt-5", TokenUsage: session.TokenUsage{InputTokens: 80, TotalTokens: 100}},
-			{Model: "gpt-5-mini", TokenUsage: session.TokenUsage{InputTokens: 40, TotalTokens: 50}},
+			{Provider: "openai", Model: "gpt-5", TokenUsage: session.TokenUsage{InputTokens: 80, TotalTokens: 100}},
+			{Provider: "openai", Model: "gpt-5-mini", TokenUsage: session.TokenUsage{InputTokens: 40, TotalTokens: 50}},
 		},
 	}
 
@@ -59,6 +59,9 @@ func TestGroupStatsRecordsByModelAttributesUsageAndAssignsSessionStatsOnce(t *te
 	}
 	if secondary.Sessions != 0 || secondary.Prompts != 0 || secondary.DurationSeconds != 0 || secondary.Turns != 0 || secondary.Messages != 0 || secondary.ToolCalls != 0 || secondary.TokenUsage.TotalTokens != 50 {
 		t.Fatalf("unexpected secondary model stats: %+v", secondary)
+	}
+	if len(primary.Cost.Components) != 1 || len(secondary.Cost.Components) != 1 || primary.Cost.Components[0].TokenUsage.TotalTokens != 100 || secondary.Cost.Components[0].TokenUsage.TotalTokens != 50 {
+		t.Fatalf("cost components were not attributed by model: primary=%+v secondary=%+v", primary.Cost.Components, secondary.Cost.Components)
 	}
 }
 
