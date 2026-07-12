@@ -90,6 +90,33 @@ func (c Catalog) Validate() error {
 			return fmt.Errorf("invalid %s/%s %s: %s", rate.Provider, rate.Model, issues[0].Field, issues[0].Message)
 		}
 	}
+	for i, rate := range c.rates {
+		from, _ := time.Parse(time.DateOnly, rate.EffectiveFrom)
+		if from.IsZero() {
+			continue
+		}
+		matches := 0
+		for _, candidate := range c.rates {
+			if candidate.Provider != rate.Provider || candidate.Model != rate.Model {
+				continue
+			}
+			candidateFrom, _ := time.Parse(time.DateOnly, candidate.EffectiveFrom)
+			if candidateFrom.IsZero() || candidateFrom.After(from) {
+				continue
+			}
+			if candidate.EffectiveUntil == "" {
+				matches++
+				continue
+			}
+			until, _ := time.Parse(time.DateOnly, candidate.EffectiveUntil)
+			if from.Before(until) {
+				matches++
+			}
+		}
+		if matches != 1 {
+			return fmt.Errorf("expected exactly one matching schedule for %s/%s at %s (rate %d)", rate.Provider, rate.Model, rate.EffectiveFrom, i)
+		}
+	}
 	return nil
 }
 

@@ -5,6 +5,8 @@ import (
 	"embed"
 	"fmt"
 	"path"
+	"sort"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -70,6 +72,9 @@ func mustLoadBundledCatalog() struct {
 	if manifest.SchemaVersion != 1 || manifest.CatalogVersion == "" {
 		panic("pricing: invalid embedded catalog manifest")
 	}
+	if err := validateBundledManifest(manifest); err != nil {
+		panic("pricing: " + err.Error())
+	}
 	result := struct {
 		version string
 		rates   []Rate
@@ -78,6 +83,9 @@ func mustLoadBundledCatalog() struct {
 		card := decodeBundledTOML[bundledCard](path.Join("catalogs", name))
 		if card.SchemaVersion != 1 || card.Model.Provider == "" || card.Model.ID == "" {
 			panic(fmt.Sprintf("pricing: invalid embedded model card %q", name))
+		}
+		if err := validateBundledCard(name, card); err != nil {
+			panic("pricing: " + err.Error())
 		}
 		for _, schedule := range card.Schedules {
 			if schedule.Basis != "api_equivalent" || schedule.Currency != "USD" || schedule.SourceURL == "" || schedule.SourceRetrievedAt == "" {
@@ -124,6 +132,116 @@ func mustLoadBundledCatalog() struct {
 		}
 	}
 	return result
+}
+
+func validateBundledManifest(manifest bundledManifest) error {
+	seen := make(map[string]bool, len(manifest.Files))
+	for _, name := range manifest.Files {
+		if name == "" || seen[name] {
+			return fmt.Errorf("invalid or duplicate manifest file %q", name)
+		}
+		seen[name] = true
+	}
+	entries, err := catalogFiles.ReadDir("catalogs")
+	if err != nil {
+		return err
+	}
+	var actual []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		children, err := catalogFiles.ReadDir(path.Join("catalogs", entry.Name()))
+		if err != nil {
+			return err
+		}
+		for _, child := range children {
+			if !child.IsDir() && path.Ext(child.Name()) == ".toml" {
+				actual = append(actual, path.Join(entry.Name(), child.Name()))
+			}
+		}
+	}
+	sort.Strings(actual)
+	declared := append([]string(nil), manifest.Files...)
+	sort.Strings(declared)
+	if len(actual) != len(declared) {
+		return fmt.Errorf("manifest does not list every model card")
+	}
+	for i := range actual {
+		if actual[i] != declared[i] {
+			return fmt.Errorf("manifest membership mismatch: %q is not %q", declared[i], actual[i])
+		}
+	}
+	return nil
+}
+
+func validateBundledCard(name string, card bundledCard) error {
+	if path.Base(name) != card.Model.ID+".toml" {
+		return fmt.Errorf("model card filename %q does not match model %q", name, card.Model.ID)
+	}
+	if len(card.Schedules) == 0 {
+		return fmt.Errorf("model card %q has no schedules", name)
+	}
+	for i, schedule := range card.Schedules {
+		from, err := time.Parse(time.DateOnly, schedule.EffectiveFrom)
+		if err != nil {
+			return fmt.Errorf("invalid effective_from in %q: %w", name, err)
+		}
+		if schedule.EffectiveUntil != "" {
+			until, err := time.Parse(time.DateOnly, schedule.EffectiveUntil)
+			if err != nil || !from.Before(until) {
+				return fmt.Errorf("invalid effective_until in %q", name)
+			}
+		}
+		meters := make(map[string]bool)
+		for _, rate := range schedule.Rates {
+			if !knownBundledMeter(rate.Meter) || rate.Unit != "million_tokens" {
+				return fmt.Errorf("invalid rate meter or unit in %q", name)
+			}
+			if meters[rate.Meter] {
+				return fmt.Errorf("duplicate meter %q in %q", rate.Meter, name)
+			}
+			meters[rate.Meter] = true
+			if _, err := parseUSDNanos(rate.Price); err != nil {
+				return fmt.Errorf("invalid price for %s in %q: %w", rate.Meter, name, err)
+			}
+		}
+		adjusted := make(map[string]bool)
+		for _, adjustment := range schedule.Adjustments {
+			if adjustment.Kind != "threshold_multiplier" || adjustment.Scope != "request" || adjustment.Measure != "total_input_tokens" || adjustment.Operator != "gt" || adjustment.Threshold < 0 {
+				return fmt.Errorf("invalid adjustment in %q", name)
+			}
+			for _, target := range adjustment.Targets {
+				if !meters[target.Meter] || adjusted[target.Meter] {
+					return fmt.Errorf("invalid adjustment target %q in %q", target.Meter, name)
+				}
+				adjusted[target.Meter] = true
+				if _, err := parseUSDNanos(target.Multiplier); err != nil {
+					return fmt.Errorf("invalid adjustment multiplier in %q: %w", name, err)
+				}
+			}
+		}
+		matches := 0
+		for _, other := range card.Schedules {
+			start, _ := time.Parse(time.DateOnly, other.EffectiveFrom)
+			if !start.After(from) && (other.EffectiveUntil == "" || from.Before(mustCatalogDate(other.EffectiveUntil))) {
+				matches++
+			}
+		}
+		if matches != 1 {
+			return fmt.Errorf("schedule %d in %q does not have exactly one match at its effective date", i, name)
+		}
+	}
+	return nil
+}
+
+func mustCatalogDate(value string) time.Time {
+	parsed, _ := time.Parse(time.DateOnly, value)
+	return parsed
+}
+
+func knownBundledMeter(meter string) bool {
+	return meter == "input_tokens" || meter == "cached_input_tokens" || meter == "output_tokens" || meter == "cache_write_tokens"
 }
 
 func decodeBundledTOML[T any](name string) T {

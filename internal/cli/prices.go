@@ -49,6 +49,7 @@ func newPricesVerifyCommand(stdout io.Writer, globals *globalOptions) *cobra.Com
 
 func runPricesVerify(cmd *cobra.Command, stdout io.Writer, globals globalOptions) error {
 	report := pricesVerifyReport{Valid: true, Config: globals.config, CatalogVersion: pricing.CatalogVersion}
+	catalog := globals.prices
 	if globals.priceConfigErr != nil {
 		report.Valid = false
 		report.Issues = append(report.Issues, pricesVerifyIssue{Path: globals.config, Message: globals.priceConfigErr.Error()})
@@ -70,8 +71,19 @@ func runPricesVerify(cmd *cobra.Command, stdout io.Writer, globals globalOptions
 			}
 			rate, issues := decodeConfiguredRate(parts[0], parts[1], fields, path)
 			report.Issues = append(report.Issues, issues...)
-			for _, issue := range pricing.ValidateRate(rate) {
+			rateIssues := pricing.ValidateRate(rate)
+			for _, issue := range rateIssues {
 				report.Issues = append(report.Issues, pricesVerifyIssue{Path: path + "." + issue.Field, Message: issue.Message})
+			}
+			if len(issues) == 0 && len(rateIssues) == 0 {
+				if err := catalog.Override(rate); err != nil {
+					report.Issues = append(report.Issues, pricesVerifyIssue{Path: path, Message: err.Error()})
+				}
+			}
+		}
+		if len(report.Issues) == 0 {
+			if err := catalog.Validate(); err != nil {
+				report.Issues = append(report.Issues, pricesVerifyIssue{Path: "catalog", Message: err.Error()})
 			}
 		}
 		if len(report.Issues) > 0 {
