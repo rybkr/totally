@@ -204,3 +204,29 @@ Terminal tables are the default. Use JSON for scripts and integrations:
 totally stats --cwd . --since 30d --format json
 totally sessions --since 7d --format json
 ```
+
+## Build and release
+
+Run the full test suite and build a versioned archive locally:
+
+```sh
+make test
+make build
+```
+
+Versioned Git tags publish GitHub Releases automatically. Create and push a tag
+after merging the release commit:
+
+```sh
+git tag -a v0.4.2 -m "v0.4.2"
+git push origin v0.4.2
+```
+
+Each release includes archives for Linux and macOS on `amd64` and `arm64`, plus
+`checksums.txt`. Download the archive for the current Go platform with:
+
+```sh
+VERSION=v0.4.2
+curl -fLO "https://github.com/rybkr/totally/releases/download/${VERSION}/totally-${VERSION}-$(go env GOOS)-$(go env GOARCH).tar.gz"
+tar -xzf "totally-${VERSION}-$(go env GOOS)-$(go env GOARCH).tar.gz"
+```
