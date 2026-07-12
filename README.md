@@ -101,19 +101,20 @@ Use `--by` to compare one dimension at a time.
 ```sh
 totally stats --since 7d
 totally stats --cwd . --since 30d
-totally stats --since 30d --by project
+totally stats --since 30d --by cwd
 totally stats --since 30d --by model
 totally stats --cwd . --by day --pretty
 ```
 
 ```text
---by project|model|provider|day|week|month|session
+--by cwd|model|provider|day|week|month|session
 --pretty                        Terminal-oriented table output
 ```
 
 The currently available session selectors are `--cwd`, `--provider`, and
 `--model` (along with the global `--since`, `--until`, `--archived`, `--home`,
-and `--format` flags). `--by project` groups by session working directory.
+and `--format` flags). `--by cwd` groups by session working directory.
+`--by project` remains a compatibility alias for `cwd`.
 For `--by model`, tokens and cost are attributed from per-request usage
 segments. Session-level measures (sessions, prompts, duration, and activity)
 are assigned to the model with the most attributed tokens (with first-seen
