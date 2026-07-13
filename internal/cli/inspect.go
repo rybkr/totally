@@ -146,7 +146,7 @@ func filterShowLatestRecords(records []session.Record, opts showOptions) []sessi
 				continue
 			}
 		}
-		if opts.provider != "" && !strings.EqualFold(record.Provider, opts.provider) {
+		if opts.provider != "" && !hasShowProvider(record, opts.provider) {
 			continue
 		}
 		if opts.model != "" && !hasShowModel(record.Models, opts.model) {
@@ -164,6 +164,18 @@ func canonicalShowCWD(cwd string) (string, error) {
 func hasShowModel(models []string, want string) bool {
 	for _, model := range models {
 		if strings.EqualFold(model, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasShowProvider(record session.Record, want string) bool {
+	if strings.EqualFold(record.Provider, want) {
+		return true
+	}
+	for _, segment := range record.UsageSegments {
+		if segment.Provider != "" && strings.EqualFold(segment.Provider, want) {
 			return true
 		}
 	}
@@ -325,6 +337,9 @@ func summarizeRecords(records []session.Record) inspectSummary {
 		addUnique(&summary.Sources, string(record.Source))
 		addUnique(&summary.CWDs, record.CWD)
 		addUnique(&summary.Providers, record.Provider)
+		for _, segment := range record.UsageSegments {
+			addUnique(&summary.Providers, segment.Provider)
+		}
 		addUnique(&summary.CLIVersions, record.CLIVersion)
 		for _, model := range record.Models {
 			addUnique(&summary.Models, model)
@@ -431,6 +446,11 @@ func showPromptMaxForTerminalWidth(terminalWidth int) int {
 
 func formatCostEstimate(cost pricing.Estimate) string {
 	if cost.AmountUSD == nil {
+		for _, missing := range cost.Missing {
+			if missing.ServiceTier != "" {
+				return fmt.Sprintf("unavailable (service tier %q is not priced for %s/%s)", missing.ServiceTier, missing.Provider, missing.Model)
+			}
+		}
 		if cost.Status == "partial" {
 			return "partial (some token usage cannot be priced)"
 		}

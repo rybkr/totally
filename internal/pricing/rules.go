@@ -17,6 +17,7 @@ type MeterRates struct {
 	Input       int64
 	CachedInput int64
 	Output      int64
+	CacheWrite  int64
 }
 
 // PricingRule changes the applicable meter rates for one usage segment.
@@ -35,6 +36,7 @@ type LongContextRule struct {
 	InputScale       string `json:"input_scale,omitempty"`
 	CachedInputScale string `json:"cached_input_scale,omitempty"`
 	OutputScale      string `json:"output_scale,omitempty"`
+	CacheWriteScale  string `json:"cache_write_scale,omitempty"`
 }
 
 func (r LongContextRule) Apply(ctx PricingContext, rates MeterRates) (MeterRates, error) {
@@ -49,7 +51,7 @@ func (r LongContextRule) Apply(ctx PricingContext, rates MeterRates) (MeterRates
 		name  string
 		scale string
 		rate  *int64
-	}{{"input_scale", r.InputScale, &rates.Input}, {"cached_input_scale", r.CachedInputScale, &rates.CachedInput}, {"output_scale", r.OutputScale, &rates.Output}} {
+	}{{"input_scale", r.InputScale, &rates.Input}, {"cached_input_scale", r.CachedInputScale, &rates.CachedInput}, {"output_scale", r.OutputScale, &rates.Output}, {"cache_write_scale", r.CacheWriteScale, &rates.CacheWrite}} {
 		scale, err := parseScale(target.scale)
 		if err != nil {
 			return MeterRates{}, fmt.Errorf("%s: %w", target.name, err)
@@ -78,7 +80,7 @@ func (r LongContextRule) Validate() []ValidationIssue {
 	if r.ThresholdTokens < 0 {
 		issues = append(issues, ValidationIssue{Field: "rules.threshold_tokens", Message: "must be non-negative"})
 	}
-	for _, value := range []struct{ field, value string }{{"rules.input_scale", r.InputScale}, {"rules.cached_input_scale", r.CachedInputScale}, {"rules.output_scale", r.OutputScale}} {
+	for _, value := range []struct{ field, value string }{{"rules.input_scale", r.InputScale}, {"rules.cached_input_scale", r.CachedInputScale}, {"rules.output_scale", r.OutputScale}, {"rules.cache_write_scale", r.CacheWriteScale}} {
 		if value.value != "" {
 			if _, err := parseScale(value.value); err != nil {
 				issues = append(issues, ValidationIssue{Field: value.field, Message: err.Error()})

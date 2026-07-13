@@ -39,9 +39,11 @@ type Record struct {
 
 // UsageSegment attributes one request's incremental token usage to a provider and model.
 type UsageSegment struct {
-	Provider   string     `json:"provider"`
-	Model      string     `json:"model"`
-	TokenUsage TokenUsage `json:"token_usage"`
+	Provider    string     `json:"provider"`
+	Model       string     `json:"model"`
+	ServiceTier string     `json:"service_tier,omitempty"`
+	OccurredAt  time.Time  `json:"occurred_at,omitzero"`
+	TokenUsage  TokenUsage `json:"token_usage"`
 }
 
 // TokenUsage captures the token counters exposed by an agent session format.

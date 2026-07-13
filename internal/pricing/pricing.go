@@ -33,8 +33,9 @@ type Rate struct {
 }
 
 type MissingRate struct {
-	Provider string `json:"provider"`
-	Model    string `json:"model"`
+	Provider    string `json:"provider"`
+	Model       string `json:"model"`
+	ServiceTier string `json:"service_tier,omitempty"`
 }
 
 type Component struct {
@@ -257,7 +258,17 @@ func (c Catalog) Estimate(segments []session.UsageSegment, at time.Time) Estimat
 	bounded := false
 	unbounded := false
 	for _, segment := range segments {
-		rate, ok := c.lookup(segment.Provider, segment.Model, at)
+		if segment.ServiceTier != "" && !strings.EqualFold(segment.ServiceTier, "default") {
+			result.Missing = append(result.Missing, MissingRate{Provider: segment.Provider, Model: segment.Model, ServiceTier: segment.ServiceTier})
+			addUniqueString(&result.Limitations, "pricing for non-default service tiers is unavailable")
+			unbounded = true
+			continue
+		}
+		rateAt := segment.OccurredAt
+		if rateAt.IsZero() {
+			rateAt = at
+		}
+		rate, ok := c.lookup(segment.Provider, segment.Model, rateAt)
 		if !ok {
 			result.Missing = append(result.Missing, MissingRate{Provider: segment.Provider, Model: segment.Model})
 			unbounded = true
@@ -294,15 +305,16 @@ func (c Catalog) Estimate(segments []session.UsageSegment, at time.Time) Estimat
 				unbounded = true
 				continue
 			}
-			if additional >= 0 {
-				upperTotal += additional
+			if additional != 0 {
+				if additional > 0 {
+					upperTotal += additional
+				} else {
+					lowerTotal += additional
+				}
 				componentAmount = amount + additional/2
-			} else {
-				lowerTotal += additional
-				componentAmount = amount + additional/2
+				bounded = true
+				addUniqueString(&result.Limitations, "cache-write tokens are not identified in the session transcript; estimate uses the midpoint of the possible surcharge")
 			}
-			bounded = true
-			addUniqueString(&result.Limitations, "cache-write tokens are not identified in the session transcript; estimate uses the midpoint of the possible surcharge")
 		}
 		result.Components = append(result.Components, Component{Provider: segment.Provider, Model: segment.Model, TokenUsage: segment.TokenUsage, AmountUSD: formatNanos(componentAmount)})
 	}
@@ -324,8 +336,6 @@ func (c Catalog) Estimate(segments []session.UsageSegment, at time.Time) Estimat
 		if len(result.Limitations) > 0 {
 			result.Status = "partial"
 		}
-	} else if len(result.Limitations) > 0 {
-		result.Status = "partial"
 	}
 	return result
 }
@@ -339,12 +349,8 @@ func tokenBreakdownBoundsNanos(usage session.TokenUsage, rate Rate) (int64, int6
 		return 0, 0, err
 	}
 	rates := []int64{parsed.Input, parsed.CachedInput, parsed.Output}
-	cacheWriteRate, err := cacheWriteRateNanos(parsed.Input, rate)
-	if err != nil {
-		return 0, 0, err
-	}
-	if cacheWriteRate != 0 {
-		rates = append(rates, cacheWriteRate)
+	if parsed.CacheWrite != 0 {
+		rates = append(rates, parsed.CacheWrite)
 	}
 	minimum, maximum := rates[0], rates[0]
 	for _, candidate := range rates[1:] {
@@ -356,20 +362,6 @@ func tokenBreakdownBoundsNanos(usage session.TokenUsage, rate Rate) (int64, int6
 		}
 	}
 	return usage.TotalTokens * minimum / tokensPerRate, usage.TotalTokens * maximum / tokensPerRate, nil
-}
-
-func cacheWriteRateNanos(inputRate int64, rate Rate) (int64, error) {
-	if rate.CacheWritePerMillionUSD != "" {
-		return parseUSDNanos(rate.CacheWritePerMillionUSD)
-	}
-	if rate.CacheWriteInputScale == "" {
-		return 0, nil
-	}
-	scale, err := parseScale(rate.CacheWriteInputScale)
-	if err != nil {
-		return 0, err
-	}
-	return inputRate * scale / 1_000, nil
 }
 
 // cacheWriteUncertaintyNanos returns the greatest possible change from the
@@ -384,21 +376,7 @@ func cacheWriteUncertaintyNanos(usage session.TokenUsage, rate Rate) (int64, err
 	if uncached < 0 {
 		uncached = 0
 	}
-	inputRate := parsed.Input
-	cacheWriteRate := int64(0)
-	if rate.CacheWritePerMillionUSD != "" {
-		cacheWriteRate, err = parseUSDNanos(rate.CacheWritePerMillionUSD)
-		if err != nil {
-			return 0, err
-		}
-	} else {
-		writeScale, err := parseScale(rate.CacheWriteInputScale)
-		if err != nil {
-			return 0, err
-		}
-		cacheWriteRate = inputRate * writeScale / 1_000
-	}
-	return uncached * (cacheWriteRate - inputRate) / tokensPerRate, nil
+	return uncached * (parsed.CacheWrite - parsed.Input) / tokensPerRate, nil
 }
 
 // hasUnpriceableTokenBreakdown reports a usage record that proves tokens were
@@ -479,12 +457,29 @@ func meterRatesFor(rate Rate, usage session.TokenUsage) (MeterRates, error) {
 	if err != nil {
 		return MeterRates{}, err
 	}
-	return applyRules(rate, PricingContext{
+	rates := MeterRates{Input: parsed.input, CachedInput: parsed.cached, Output: parsed.output}
+	if rate.CacheWritePerMillionUSD != "" {
+		rates.CacheWrite, err = parseUSDNanos(rate.CacheWritePerMillionUSD)
+		if err != nil {
+			return MeterRates{}, err
+		}
+	} else if rate.CacheWriteInputScale != "" {
+		writeScale, err := parseScale(rate.CacheWriteInputScale)
+		if err != nil {
+			return MeterRates{}, err
+		}
+		rates.CacheWrite = rates.Input * writeScale / 1_000
+	}
+	rates, err = applyRules(rate, PricingContext{
 		InputTokens:       usage.InputTokens,
 		CachedInputTokens: usage.CachedInputTokens,
 		OutputTokens:      usage.OutputTokens,
 		TotalTokens:       usage.TotalTokens,
-	}, MeterRates{Input: parsed.input, CachedInput: parsed.cached, Output: parsed.output})
+	}, rates)
+	if err != nil {
+		return MeterRates{}, err
+	}
+	return rates, nil
 }
 
 func costNanos(usage session.TokenUsage, rate Rate) (int64, error) {

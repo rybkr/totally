@@ -156,11 +156,39 @@ func filterStatsRecords(records []session.Record, opts statsOptions) []session.R
 				continue
 			}
 		}
-		if opts.provider != "" && !strings.EqualFold(record.Provider, opts.provider) {
-			continue
-		}
-		if opts.model != "" && !hasShowModel(record.Models, opts.model) {
-			continue
+		if opts.provider != "" || opts.model != "" {
+			if len(record.UsageSegments) == 0 {
+				if opts.provider != "" && !strings.EqualFold(record.Provider, opts.provider) {
+					continue
+				}
+				if opts.model != "" && !hasShowModel(record.Models, opts.model) {
+					continue
+				}
+			} else {
+				segments := make([]session.UsageSegment, 0, len(record.UsageSegments))
+				for _, segment := range record.UsageSegments {
+					provider := segment.Provider
+					if provider == "" {
+						provider = record.Provider
+					}
+					if opts.provider != "" && !strings.EqualFold(provider, opts.provider) {
+						continue
+					}
+					if opts.model != "" && !strings.EqualFold(segment.Model, opts.model) {
+						continue
+					}
+					segment.Provider = provider
+					segments = append(segments, segment)
+				}
+				if len(segments) == 0 {
+					continue
+				}
+				record.UsageSegments = segments
+				record.TokenUsage = session.TokenUsage{}
+				for _, segment := range segments {
+					addTokenUsage(&record.TokenUsage, segment.TokenUsage)
+				}
+			}
 		}
 		filtered = append(filtered, record)
 	}
@@ -176,8 +204,8 @@ func groupStatsRecords(records []session.Record, by []string) map[string][]group
 	groups := make(map[string][]groupedStatsRecord)
 	for _, record := range records {
 		attributed := []groupedStatsRecord{{Record: record, IncludeSessionStats: true}}
-		if containsStatsDimension(by, "model") {
-			attributed = groupStatsRecordsByModel(record)
+		if containsStatsDimension(by, "model") || containsStatsDimension(by, "provider") {
+			attributed = groupStatsRecordsByUsageSegments(record, by)
 		}
 		for _, grouped := range attributed {
 			values := make([]string, 0, len(by))
@@ -201,59 +229,86 @@ func containsStatsDimension(dimensions []string, target string) bool {
 	return false
 }
 
-// groupStatsRecordByModel attributes tokens and pricing from each usage segment
-// to its model. Session-level fields cannot be split reliably, so they are
-// assigned to the model with the most attributed tokens (first seen wins ties).
-// This keeps model groups additive without inventing fractional sessions or
-// activity counts.
-func groupStatsRecordByModel(groups map[string][]groupedStatsRecord, record session.Record) {
-	for _, attributed := range groupStatsRecordsByModel(record) {
-		groups[attributed.Record.Models[0]] = append(groups[attributed.Record.Models[0]], attributed)
+// groupStatsRecordsByUsageSegments attributes tokens and pricing using the
+// requested segment-backed dimensions. Session-level fields cannot be split
+// reliably, so they are assigned to the group with the most attributed tokens
+// (first seen wins ties). This keeps groups additive without inventing
+// fractional sessions or activity counts.
+func groupStatsRecordsByUsageSegments(record session.Record, by []string) []groupedStatsRecord {
+	groupModel := containsStatsDimension(by, "model")
+	groupProvider := containsStatsDimension(by, "provider")
+	segmentsByKey := make(map[string][]session.UsageSegment)
+	type attributionKey struct {
+		key      string
+		model    string
+		provider string
 	}
-}
-
-func groupStatsRecordsByModel(record session.Record) []groupedStatsRecord {
-	segmentsByModel := make(map[string][]session.UsageSegment)
-	models := make([]string, 0, len(record.UsageSegments))
+	keys := make([]attributionKey, 0, len(record.UsageSegments))
 	for _, segment := range record.UsageSegments {
-		if segment.Model == "" {
-			continue
+		model := segment.Model
+		if model == "" {
+			model = "(unknown)"
 		}
-		if _, ok := segmentsByModel[segment.Model]; !ok {
-			models = append(models, segment.Model)
+		provider := segment.Provider
+		if provider == "" {
+			provider = record.Provider
 		}
-		segmentsByModel[segment.Model] = append(segmentsByModel[segment.Model], segment)
+		if provider == "" {
+			provider = "(unknown)"
+		}
+		parts := make([]string, 0, 2)
+		if groupModel {
+			parts = append(parts, model)
+		}
+		if groupProvider {
+			parts = append(parts, provider)
+		}
+		key := strings.Join(parts, "\x1f")
+		if _, ok := segmentsByKey[key]; !ok {
+			keys = append(keys, attributionKey{key: key, model: model, provider: provider})
+		}
+		segmentsByKey[key] = append(segmentsByKey[key], segment)
 	}
-	if len(models) == 0 {
-		key := "(unknown)"
-		if len(record.Models) > 0 && record.Models[0] != "" {
-			key = record.Models[0]
+	if len(keys) == 0 {
+		if groupModel {
+			model := "(unknown)"
+			if len(record.Models) > 0 && record.Models[0] != "" {
+				model = record.Models[0]
+			}
+			record.Models = []string{model}
 		}
-		record.Models = []string{key}
+		if groupProvider && record.Provider == "" {
+			record.Provider = "(unknown)"
+		}
 		return []groupedStatsRecord{{Record: record, IncludeSessionStats: true}}
 	}
 
-	primary := models[0]
+	primary := keys[0].key
 	var primaryTokens int64 = -1
-	result := make([]groupedStatsRecord, 0, len(models))
-	for _, model := range models {
+	result := make([]groupedStatsRecord, 0, len(keys))
+	for _, attribution := range keys {
 		var tokens int64
-		for _, segment := range segmentsByModel[model] {
+		for _, segment := range segmentsByKey[attribution.key] {
 			tokens += segment.TokenUsage.TotalTokens
 		}
 		if tokens > primaryTokens {
-			primary, primaryTokens = model, tokens
+			primary, primaryTokens = attribution.key, tokens
 		}
 	}
-	for _, model := range models {
+	for _, attribution := range keys {
 		attributed := record
-		attributed.Models = []string{model}
-		attributed.UsageSegments = segmentsByModel[model]
+		if groupModel {
+			attributed.Models = []string{attribution.model}
+		}
+		if groupProvider {
+			attributed.Provider = attribution.provider
+		}
+		attributed.UsageSegments = segmentsByKey[attribution.key]
 		attributed.TokenUsage = session.TokenUsage{}
 		for _, segment := range attributed.UsageSegments {
 			addTokenUsage(&attributed.TokenUsage, segment.TokenUsage)
 		}
-		result = append(result, groupedStatsRecord{Record: attributed, IncludeSessionStats: model == primary})
+		result = append(result, groupedStatsRecord{Record: attributed, IncludeSessionStats: attribution.key == primary})
 	}
 	return result
 }
@@ -381,8 +436,6 @@ func finalizeStatsReport(result statsReport, totals costTotals) statsReport {
 		if len(result.Cost.Missing) > 0 || len(result.Cost.Limitations) > 0 {
 			result.Cost.Status = "partial"
 		}
-	} else if len(result.Cost.Limitations) > 0 {
-		result.Cost.Status = "partial"
 	}
 	return result
 }

@@ -19,10 +19,17 @@ import (
 type Parser struct{}
 
 type parseState struct {
-	activeModel       string
-	previousTotal     codexTokenUsage
-	previousLast      codexTokenUsage
-	hasTokenUsagePair bool
+	activeModel           string
+	activeProvider        string
+	activeServiceTier     string
+	previousTotal         codexTokenUsage
+	previousLast          codexTokenUsage
+	hasTokenUsagePair     bool
+	sawSessionMeta        bool
+	hasEmbeddedHistory    bool
+	clearedInheritedUsage bool
+	canonicalSessionID    string
+	canonicalProvider     string
 }
 
 func NewParser() Parser {
@@ -81,6 +88,9 @@ func (Parser) ParseSession(ctx context.Context, file session.FileRef) (session.R
 		}
 	}
 
+	if state.hasEmbeddedHistory && !state.clearedInheritedUsage {
+		clearInheritedUsage(&record, &state)
+	}
 	return record, nil
 }
 
@@ -128,12 +138,12 @@ func applyRolloutLine(line []byte, record *session.Record, state *parseState, sa
 
 	switch envelope.Type {
 	case "session_meta":
-		return applySessionMeta(envelope.Payload, record)
+		return applySessionMeta(envelope.Payload, record, state)
 	case "turn_context":
 		record.Turns++
 		return applyTurnContext(envelope.Payload, record, state)
 	case "event_msg":
-		return applyEventMsg(envelope.Payload, record, state)
+		return applyEventMsg(envelope.Payload, envelope.Timestamp, record, state)
 	case "response_item":
 		return applyResponseItem(envelope.Payload, record)
 	default:
@@ -141,10 +151,11 @@ func applyRolloutLine(line []byte, record *session.Record, state *parseState, sa
 	}
 }
 
-func applySessionMeta(payload json.RawMessage, record *session.Record) error {
+func applySessionMeta(payload json.RawMessage, record *session.Record, state *parseState) error {
 	var meta struct {
 		SessionID     string `json:"session_id"`
 		ID            string `json:"id"`
+		ForkedFromID  string `json:"forked_from_id"`
 		CWD           string `json:"cwd"`
 		CLIVersion    string `json:"cli_version"`
 		ModelProvider string `json:"model_provider"`
@@ -153,14 +164,29 @@ func applySessionMeta(payload json.RawMessage, record *session.Record) error {
 		return err
 	}
 
-	if meta.SessionID != "" {
-		record.SessionID = meta.SessionID
-	} else if meta.ID != "" {
-		record.SessionID = meta.ID
+	// Forked rollouts copy their parent's session_meta after the canonical child
+	// metadata. The first record owns the file, and current Codex identifies the
+	// child in id while session_id still points at the parent.
+	if state.sawSessionMeta {
+		if meta.ID != "" && meta.ID != record.SessionID {
+			state.hasEmbeddedHistory = true
+		}
+		return nil
 	}
+	state.sawSessionMeta = true
+	state.hasEmbeddedHistory = meta.ForkedFromID != "" || (meta.ID != "" && meta.SessionID != "" && meta.ID != meta.SessionID)
+
+	if meta.ID != "" {
+		record.SessionID = meta.ID
+	} else if meta.SessionID != "" {
+		record.SessionID = meta.SessionID
+	}
+	state.canonicalSessionID = record.SessionID
 	record.CWD = meta.CWD
 	record.CLIVersion = meta.CLIVersion
 	record.Provider = meta.ModelProvider
+	state.canonicalProvider = meta.ModelProvider
+	state.activeProvider = meta.ModelProvider
 	return nil
 }
 
@@ -195,9 +221,17 @@ func addModel(record *session.Record, model string) {
 	record.Models = append(record.Models, model)
 }
 
-func applyEventMsg(payload json.RawMessage, record *session.Record, state *parseState) error {
+func applyEventMsg(payload json.RawMessage, occurredAt time.Time, record *session.Record, state *parseState) error {
 	var event struct {
-		Type string `json:"type"`
+		Type           string `json:"type"`
+		TurnID         string `json:"turn_id"`
+		FromModel      string `json:"from_model"`
+		ToModel        string `json:"to_model"`
+		ThreadSettings *struct {
+			Model           string `json:"model"`
+			ModelProviderID string `json:"model_provider_id"`
+			ServiceTier     string `json:"service_tier"`
+		} `json:"thread_settings"`
 		Info *struct {
 			TotalTokenUsage codexTokenUsage `json:"total_token_usage"`
 			LastTokenUsage  codexTokenUsage `json:"last_token_usage"`
@@ -208,11 +242,33 @@ func applyEventMsg(payload json.RawMessage, record *session.Record, state *parse
 	}
 
 	switch event.Type {
+	case "task_started", "turn_started":
+		// Generic forks do not necessarily carry an inter-agent marker. Codex
+		// UUIDv7 thread and turn IDs are timestamp ordered, so the first valid
+		// turn at or after the child thread ID marks the end of copied history.
+		if state.hasEmbeddedHistory && isUUIDv7(state.canonicalSessionID) && isUUIDv7(event.TurnID) && strings.ToLower(event.TurnID) >= strings.ToLower(state.canonicalSessionID) {
+			clearInheritedUsage(record, state)
+		}
+	case "model_reroute":
+		if event.ToModel != "" {
+			addModel(record, event.ToModel)
+			state.activeModel = event.ToModel
+		}
+	case "thread_settings_applied":
+		if event.ThreadSettings != nil {
+			if event.ThreadSettings.Model != "" {
+				addModel(record, event.ThreadSettings.Model)
+				state.activeModel = event.ThreadSettings.Model
+			}
+			if event.ThreadSettings.ModelProviderID != "" {
+				state.activeProvider = event.ThreadSettings.ModelProviderID
+			}
+			state.activeServiceTier = event.ThreadSettings.ServiceTier
+		}
 	case "token_count":
 		if event.Info != nil {
 			currentTotal := event.Info.TotalTokenUsage
 			currentLast := event.Info.LastTokenUsage
-			record.TokenUsage = currentTotal.toSessionUsage()
 
 			// Codex can repeat its latest counter snapshot when a session is
 			// resumed. The repeated last_token_usage is not another request.
@@ -224,6 +280,22 @@ func applyEventMsg(payload json.RawMessage, record *session.Record, state *parse
 			}
 
 			if currentTotal != state.previousTotal {
+				// Codex can replace its cumulative counters with a total-only local
+				// context-window sentinel. It is not provider usage, and resetting
+				// the billable fields makes it look like a cumulative regression.
+				if currentTotal.isTotalOnly() && !currentLast.hasBillableBreakdown() {
+					expectedDelta := currentTotal.TotalTokens - state.previousTotal.TotalTokens
+					if expectedDelta < 0 {
+						expectedDelta = 0
+					}
+					if currentLast.TotalTokens != expectedDelta {
+						return fmt.Errorf("cumulative token usage delta does not match last_token_usage")
+					}
+					state.previousTotal = currentTotal
+					state.previousLast = currentLast
+					state.hasTokenUsagePair = true
+					return nil
+				}
 				delta, ok := currentTotal.subtract(state.previousTotal)
 				if !ok {
 					return fmt.Errorf("cumulative token usage regressed")
@@ -231,14 +303,17 @@ func applyEventMsg(payload json.RawMessage, record *session.Record, state *parse
 				if delta != currentLast {
 					return fmt.Errorf("cumulative token usage delta does not match last_token_usage")
 				}
-				addUsageSegment(record, record.Provider, state.activeModel, delta.toSessionUsage())
+				provider := state.activeProvider
+				if provider == "" {
+					provider = record.Provider
+				}
+				addAcceptedUsage(record, provider, state.activeModel, state.activeServiceTier, occurredAt, currentLast)
 			} else if currentLast.hasBillableBreakdown() {
 				return fmt.Errorf("last_token_usage changed without cumulative token usage advancing")
-			} else {
-				// Compaction events can report only total_tokens and do not advance
-				// Codex's cumulative billable input/output counters.
-				addUsageSegment(record, record.Provider, state.activeModel, currentLast.toSessionUsage())
 			}
+			// A total-only last_token_usage is Codex's local estimate of the
+			// active context after compaction. It is neither API usage nor billable
+			// telemetry, so an unchanged cumulative total contributes nothing.
 
 			state.previousTotal = currentTotal
 			state.previousLast = currentLast
@@ -248,11 +323,50 @@ func applyEventMsg(payload json.RawMessage, record *session.Record, state *parse
 	return nil
 }
 
-func addUsageSegment(record *session.Record, provider, model string, usage session.TokenUsage) {
+func clearInheritedUsage(record *session.Record, state *parseState) {
+	if !state.hasEmbeddedHistory || state.clearedInheritedUsage {
+		return
+	}
+	record.TokenUsage = session.TokenUsage{}
+	record.UsageSegments = nil
+	state.activeProvider = state.canonicalProvider
+	state.activeServiceTier = ""
+	state.clearedInheritedUsage = true
+}
+
+func isUUIDv7(value string) bool {
+	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' || value[14] != '7' {
+		return false
+	}
+	for i, r := range value {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			continue
+		}
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+func addAcceptedUsage(record *session.Record, provider, model, serviceTier string, occurredAt time.Time, usage codexTokenUsage) {
+	if !usage.hasBillableBreakdown() {
+		return
+	}
+	normalized := usage.toSessionUsage()
+	record.TokenUsage.InputTokens += normalized.InputTokens
+	record.TokenUsage.CachedInputTokens += normalized.CachedInputTokens
+	record.TokenUsage.OutputTokens += normalized.OutputTokens
+	record.TokenUsage.ReasoningOutputTokens += normalized.ReasoningOutputTokens
+	record.TokenUsage.TotalTokens += normalized.TotalTokens
+	addUsageSegment(record, provider, model, serviceTier, occurredAt, normalized)
+}
+
+func addUsageSegment(record *session.Record, provider, model, serviceTier string, occurredAt time.Time, usage session.TokenUsage) {
 	if model == "" || usage == (session.TokenUsage{}) {
 		return
 	}
-	record.UsageSegments = append(record.UsageSegments, session.UsageSegment{Provider: provider, Model: model, TokenUsage: usage})
+	record.UsageSegments = append(record.UsageSegments, session.UsageSegment{Provider: provider, Model: model, ServiceTier: serviceTier, OccurredAt: occurredAt, TokenUsage: usage})
 }
 
 func applyResponseItem(payload json.RawMessage, record *session.Record) error {
@@ -327,6 +441,10 @@ func (usage codexTokenUsage) subtract(previous codexTokenUsage) (codexTokenUsage
 
 func (usage codexTokenUsage) hasBillableBreakdown() bool {
 	return usage.InputTokens != 0 || usage.CachedInputTokens != 0 || usage.OutputTokens != 0 || usage.ReasoningOutputTokens != 0
+}
+
+func (usage codexTokenUsage) isTotalOnly() bool {
+	return usage.TotalTokens != 0 && !usage.hasBillableBreakdown()
 }
 
 func (usage codexTokenUsage) toSessionUsage() session.TokenUsage {

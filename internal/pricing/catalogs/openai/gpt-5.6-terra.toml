@@ -10,7 +10,7 @@ effective_from = "2026-07-09"
 basis = "api_equivalent"
 currency = "USD"
 source_url = "https://developers.openai.com/api/docs/models/gpt-5.6-terra"
-source_retrieved_at = "2026-07-11"
+source_retrieved_at = "2026-07-12"
 
 [[schedules.rates]]
 meter = "input_tokens"
@@ -39,8 +39,16 @@ meter = "input_tokens"
 multiplier = "2"
 
 [[schedules.adjustments.targets]]
+meter = "cached_input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
 meter = "output_tokens"
 multiplier = "1.5"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_tokens"
+multiplier = "2"
 
 [[schedules.rates]]
 meter = "cache_write_tokens"

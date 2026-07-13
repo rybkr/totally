@@ -32,6 +32,9 @@ func ValidateTokenUsage(usage TokenUsage) []TokenUsageIssue {
 	if usage.InputTokens >= 0 && usage.CachedInputTokens > usage.InputTokens {
 		issues = append(issues, TokenUsageIssue{Field: "cached_input_tokens", Message: fmt.Sprintf("must not exceed input_tokens (%d)", usage.InputTokens)})
 	}
+	if usage.OutputTokens >= 0 && usage.ReasoningOutputTokens > usage.OutputTokens {
+		issues = append(issues, TokenUsageIssue{Field: "reasoning_output_tokens", Message: fmt.Sprintf("must not exceed output_tokens (%d)", usage.OutputTokens)})
+	}
 	hasBreakdown := usage.InputTokens != 0 || usage.CachedInputTokens != 0 || usage.OutputTokens != 0 || usage.ReasoningOutputTokens != 0
 	if hasBreakdown && usage.InputTokens >= 0 && usage.OutputTokens >= 0 && usage.TotalTokens >= 0 && usage.TotalTokens != usage.InputTokens+usage.OutputTokens {
 		issues = append(issues, TokenUsageIssue{Field: "total_tokens", Message: fmt.Sprintf("must equal input_tokens + output_tokens (%d)", usage.InputTokens+usage.OutputTokens)})

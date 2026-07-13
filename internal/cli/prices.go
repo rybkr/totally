@@ -196,7 +196,7 @@ func decodeConfiguredRate(provider, model string, fields map[string]any, path st
 			*target = text
 			continue
 		}
-		if name == "long_context_input_scale" || name == "long_context_cached_input_scale" || name == "long_context_output_scale" {
+		if name == "long_context_input_scale" || name == "long_context_cached_input_scale" || name == "long_context_output_scale" || name == "long_context_cache_write_scale" {
 			text, ok := value.(string)
 			if !ok {
 				issues = append(issues, pricesVerifyIssue{Path: path + "." + name, Message: "must be a string"})
@@ -210,6 +210,8 @@ func decodeConfiguredRate(provider, model string, fields map[string]any, path st
 				rule.CachedInputScale = text
 			case "long_context_output_scale":
 				rule.OutputScale = text
+			case "long_context_cache_write_scale":
+				rule.CacheWriteScale = text
 			}
 			continue
 		}

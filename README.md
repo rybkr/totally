@@ -154,6 +154,10 @@ effective_from = "2025-08-07"
 source = "user"
 ```
 
+Conditional overrides can use `long_context_threshold` together with
+`long_context_input_scale`, `long_context_cached_input_scale`,
+`long_context_output_scale`, and `long_context_cache_write_scale`.
+
 Organizations that used a model before its first public pricing date can opt
 into applying that model's earliest known rate to those earlier sessions:
 
@@ -166,17 +170,18 @@ Without this setting, sessions before the first known price remain unpriced.
 
 Set `replace = true` to replace a model's entire bundled pricing history.
 
-Session costs use the API-equivalent basis. Cached input is excluded from
-regular input before applying its lower rate, and reasoning tokens are not
-charged separately because they are included in output tokens. If usage cannot
-be attributed to a priced model, `show` reports the estimate as unavailable or
-partial rather than treating it as zero. JSON includes the structured `cost`
-object and retains `cost_usd` as a compatibility field.
+Session costs use the Standard/default API-equivalent basis. Usage tagged with
+a non-default service tier is left unpriced rather than estimated from Standard
+rates. Cached input is excluded from regular input before applying its lower
+rate, and reasoning tokens are not charged separately because they are included
+in output tokens. If usage cannot be attributed to a priced model, `show`
+reports the estimate as unavailable or partial rather than treating it as zero.
+JSON includes the structured `cost` object and retains `cost_usd` as a
+compatibility field.
 
-When a transcript identifies a priced model but reports only `total_tokens`,
-Totally bounds the estimate by assigning those tokens to the cheapest and most
-expensive billable meters, then uses the midpoint. The JSON cost object records
-the resulting lower and upper bounds.
+Codex can emit `last_token_usage` events containing only `total_tokens` while
+recomputing or compacting context. These are local context-size estimates, not
+billable token usage, so Totally excludes them from token totals and cost.
 
 The bundled catalog also records conditional long-context multipliers. They are
 applied per request when a model charges more above its input-token threshold.
@@ -203,8 +208,8 @@ impossible token counters, including negative values, cached input larger than
 input, and a full input/output breakdown whose total does not match. With no
 paths it verifies discovered files; provide one or more `.jsonl` or `.jsonl.zst`
 paths to verify those files directly. It exits non-zero when it finds an issue.
-Total-only telemetry remains valid because it lacks the billable breakdown
-needed to check that relationship.
+Codex context-size estimates reported as total-only `last_token_usage` remain
+valid telemetry, but are ignored for token totals and cost.
 
 ## Automation
 

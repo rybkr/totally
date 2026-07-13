@@ -112,8 +112,10 @@ non-negative integer.
 
 Each target names one rate in the same schedule and supplies a non-negative
 decimal multiplier. Only named meters are adjusted: adjustments are not
-inherited by related or derived meters. Multiple matching adjustments for one
-meter are invalid in version 1 rather than implicitly composed.
+inherited by related or derived meters. A `cache_write_tokens` rate therefore
+needs its own target when long-context pricing changes that rate. Multiple
+matching adjustments for one meter are invalid in version 1 rather than
+implicitly composed.
 
 When the predicate matches, each multiplier applies to the target meter's
 entire billable quantity for that request, not only to the quantity above the

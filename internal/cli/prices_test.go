@@ -89,6 +89,40 @@ source = "user"
 	}
 }
 
+func TestPricesCommandLoadsLongContextCacheWriteScale(t *testing.T) {
+	config := writeConfig(t, `[prices."example/model"]
+input_per_million_usd = "1"
+cached_input_per_million_usd = "0.1"
+output_per_million_usd = "2"
+cache_write_per_million_usd = "1.25"
+effective_from = "2026-01-01"
+long_context_threshold = 272000
+long_context_input_scale = "2"
+long_context_cached_input_scale = "2"
+long_context_output_scale = "1.5"
+long_context_cache_write_scale = "2"
+`)
+	var stdout, stderr bytes.Buffer
+	cmd := newTestRootCommand(t, &stdout, &stderr)
+	cmd.SetArgs([]string{"prices", "--provider", "example", "--model", "model", "--config", config, "--format", "json"})
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Rates []struct {
+			Rules []struct {
+				CacheWriteScale string `json:"cache_write_scale"`
+			} `json:"rules"`
+		} `json:"rates"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Rates) != 1 || len(result.Rates[0].Rules) != 1 || result.Rates[0].Rules[0].CacheWriteScale != "2" {
+		t.Fatalf("long-context cache-write scale was not loaded: %s", stdout.String())
+	}
+}
+
 func TestPricesCommandReplacesModelHistoryOnlyWhenRequested(t *testing.T) {
 	config := filepath.Join(t.TempDir(), "config.toml")
 	contents := `[prices."openai/gpt-5"]

@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/rybkr/totally/internal/pricing"
+	"github.com/rybkr/totally/internal/session"
 )
 
 func TestFormatCostEstimatePrintsCacheWriteUncertainty(t *testing.T) {
@@ -17,6 +19,59 @@ func TestFormatCostEstimatePrintsCacheWriteUncertainty(t *testing.T) {
 	want := "~$0.321601 ± $0.018893 USD estimated (cache-write uncertainty)"
 	if got != want {
 		t.Fatalf("formatCostEstimate() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatCostEstimateExplainsUnavailableServiceTier(t *testing.T) {
+	got := formatCostEstimate(pricing.Estimate{
+		Status:  "unavailable",
+		Missing: []pricing.MissingRate{{Provider: "openai", Model: "gpt-5", ServiceTier: "flex"}},
+	})
+	want := `unavailable (service tier "flex" is not priced for openai/gpt-5)`
+	if got != want {
+		t.Fatalf("formatCostEstimate() = %q, want %q", got, want)
+	}
+}
+
+func TestFilterShowLatestRecordsMatchesLaterUsageSegmentProvider(t *testing.T) {
+	record := session.Record{
+		Provider: "openai",
+		UsageSegments: []session.UsageSegment{
+			{Provider: "openai", Model: "gpt-5"},
+			{Provider: "azure", Model: "gpt-5"},
+		},
+	}
+
+	got := filterShowLatestRecords([]session.Record{record}, showOptions{provider: "AZURE"})
+	if len(got) != 1 {
+		t.Fatalf("later usage-segment provider did not match: %+v", got)
+	}
+	if got[0].Provider != "openai" {
+		t.Fatalf("canonical provider changed: %q", got[0].Provider)
+	}
+}
+
+func TestSummarizeRecordsIncludesCanonicalAndUsageSegmentProviders(t *testing.T) {
+	summary := summarizeRecords([]session.Record{
+		{
+			Provider: "openai",
+			UsageSegments: []session.UsageSegment{
+				{Provider: ""},
+				{Provider: "azure"},
+				{Provider: "openai"},
+			},
+		},
+		{
+			UsageSegments: []session.UsageSegment{
+				{Provider: "bedrock"},
+				{Provider: ""},
+			},
+		},
+	})
+
+	want := []string{"openai", "azure", "bedrock"}
+	if !slices.Equal(summary.Providers, want) {
+		t.Fatalf("providers = %+v, want %+v", summary.Providers, want)
 	}
 }
 

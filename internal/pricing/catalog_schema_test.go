@@ -89,7 +89,7 @@ func TestBundledCatalogConformsToSchema(t *testing.T) {
 	}
 }
 
-func TestValidateBundledCardRejectsCacheWriteAdjustmentTarget(t *testing.T) {
+func TestValidateBundledCardAcceptsCacheWriteAdjustmentTarget(t *testing.T) {
 	card := bundledCard{SchemaVersion: 1}
 	card.Model.Provider = "test"
 	card.Model.ID = "model"
@@ -103,8 +103,16 @@ func TestValidateBundledCardRejectsCacheWriteAdjustmentTarget(t *testing.T) {
 		},
 		Adjustments: []bundledAdjustment{{Kind: "threshold_multiplier", Scope: "request", Measure: "total_input_tokens", Operator: "gt", Targets: []bundledTarget{{Meter: "cache_write_tokens", Multiplier: "2"}}}},
 	}}
-	if err := validateBundledCard("test/model.toml", card); err == nil {
-		t.Fatal("expected cache-write adjustment target to be rejected")
+	if err := validateBundledCard("test/model.toml", card); err != nil {
+		t.Fatalf("cache-write adjustment target was rejected: %v", err)
+	}
+	rule, err := bundledPricingRule(card.Schedules[0].Adjustments[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	longContext, ok := rule.(LongContextRule)
+	if !ok || longContext.CacheWriteScale != "2" {
+		t.Fatalf("cache-write adjustment was not translated: %+v", rule)
 	}
 }
 

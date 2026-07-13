@@ -138,6 +138,8 @@ func bundledPricingRule(adjustment bundledAdjustment) (PricingRule, error) {
 			rule.CachedInputScale = target.Multiplier
 		case "output_tokens":
 			rule.OutputScale = target.Multiplier
+		case "cache_write_tokens":
+			rule.CacheWriteScale = target.Multiplier
 		default:
 			return nil, fmt.Errorf("unknown target meter %q", target.Meter)
 		}
@@ -256,7 +258,7 @@ func knownBundledMeter(meter string) bool {
 }
 
 func longContextTargetMeter(meter string) bool {
-	return meter == "input_tokens" || meter == "cached_input_tokens" || meter == "output_tokens"
+	return meter == "input_tokens" || meter == "cached_input_tokens" || meter == "output_tokens" || meter == "cache_write_tokens"
 }
 
 func decodeBundledTOML[T any](name string) T {

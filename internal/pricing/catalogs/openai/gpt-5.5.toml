@@ -10,7 +10,7 @@ effective_from = "2026-04-23"
 basis = "api_equivalent"
 currency = "USD"
 source_url = "https://developers.openai.com/api/docs/models/gpt-5.5"
-source_retrieved_at = "2026-07-11"
+source_retrieved_at = "2026-07-12"
 
 [[schedules.rates]]
 meter = "input_tokens"
@@ -36,6 +36,10 @@ threshold = 272000
 
 [[schedules.adjustments.targets]]
 meter = "input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cached_input_tokens"
 multiplier = "2"
 
 [[schedules.adjustments.targets]]
