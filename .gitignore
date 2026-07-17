@@ -28,3 +28,8 @@ Thumbs.db
 *.swo
 .idea/
 .vscode/
+
+# Agent files
+.claude/
+.codex/
+.agents/

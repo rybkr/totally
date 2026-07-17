@@ -1,10 +1,20 @@
 # Totally
 
-`totally` is a local CLI for understanding agent sessions: what you worked on,
-how much it used and cost, and where the underlying transcript lives.
+`totally` turns your local agent-session transcripts into a faithful, queryable
+record of what you worked on, how many tokens it used, what it cost, and where
+the raw transcript lives. It runs entirely on your machine as a single static
+binary — no runtime to install, no network calls, no data leaving your laptop.
 
-> **Status:** This README defines the intended public CLI. The current
-> implementation is being brought into line with it.
+`totally` is a **data source** first and a reporting tool second. Its commands
+answer the common questions directly, and every command emits structured JSON so
+you can slice usage and cost however you need — including questions the built-in
+reports do not anticipate. Cost figures are honest by construction: usage that
+cannot be attributed to a known price is reported as partial or unavailable
+rather than guessed.
+
+> **Status:** Totally is early (v0). It is usable today; the CLI surface and the
+> exported data format are still settling, so expect refinement before they
+> stabilize.
 
 ## Commands
 
@@ -46,6 +56,10 @@ timestamps, and `today`, `yesterday`, or `now`.
 
 By default, `totally` discovers supported local agent homes. Use `--home` to
 inspect a specific home or combine several homes in one report.
+
+Today, `totally` reads OpenAI Codex sessions. Support for additional agents and
+providers is planned, and the discovery, parsing, and pricing layers are built
+to normalize them into one comparable record.
 
 ## Find sessions
 
@@ -211,14 +225,20 @@ paths to verify those files directly. It exits non-zero when it finds an issue.
 Codex context-size estimates reported as total-only `last_token_usage` remain
 valid telemetry, but are ignored for token totals and cost.
 
-## Automation
+## Data and automation
 
-Terminal tables are the default. Use JSON for scripts and integrations:
+Terminal tables are for reading; structured output is for everything else. Every
+command accepts `--format json`, so `totally` can act as a local data source for
+dashboards, scripts, and reports:
 
 ```sh
 totally stats --cwd . --since 30d --format json
 totally sessions --since 7d --format json
 ```
+
+JSON output carries the complete, untruncated values — full prompts and the
+structured `cost` object with its uncertainty bounds — regardless of how terminal
+tables are formatted.
 
 ## Build and release
 
