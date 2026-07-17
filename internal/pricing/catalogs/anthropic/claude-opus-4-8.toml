@@ -1,0 +1,129 @@
+# Bundled Anthropic API-equivalent price card.
+schema_version = 1
+
+[model]
+provider = "anthropic"
+id = "claude-opus-4-8"
+
+[[schedules]]
+effective_from = "2026-05-28"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://platform.claude.com/docs/en/about-claude/pricing"
+source_retrieved_at = "2026-07-16"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "5.00"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.50"
+
+[[schedules.rates]]
+meter = "cache_write_5m_tokens"
+unit = "million_tokens"
+price = "6.25"
+
+[[schedules.rates]]
+meter = "cache_write_1h_tokens"
+unit = "million_tokens"
+price = "10.00"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "25.00"
+
+[[schedules.rates]]
+meter = "web_search_requests"
+unit = "thousand_requests"
+price = "10.00"
+
+[[schedules.rates]]
+meter = "web_fetch_requests"
+unit = "thousand_requests"
+price = "0"
+
+# 1M-token context window at standard pricing, no long-context premium
+# (source explicitly lists Opus 4.8 among the models with no such premium).
+
+# Message Batches API: 50% off every token meter (input, output, cache write,
+# cache read); prompt-caching multipliers apply on top of the batch-discounted
+# base rate per the source, which materializes to exactly half of every
+# standard-schedule token rate above.
+[[schedules]]
+effective_from = "2026-05-28"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://platform.claude.com/docs/en/about-claude/pricing"
+source_retrieved_at = "2026-07-16"
+
+[schedules.selector]
+processing_mode = "batch"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "2.50"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.25"
+
+[[schedules.rates]]
+meter = "cache_write_5m_tokens"
+unit = "million_tokens"
+price = "3.125"
+
+[[schedules.rates]]
+meter = "cache_write_1h_tokens"
+unit = "million_tokens"
+price = "5.00"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "12.50"
+
+# Fast mode (research preview): 2x base input/output pricing, applied across
+# the full context window. Prompt-caching multipliers stack on top of fast
+# mode's base rate per the source, so cache meters here are fast-mode input
+# times the same 1.25x / 2x / 0.1x multipliers used on the standard schedule.
+[[schedules]]
+effective_from = "2026-05-28"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://platform.claude.com/docs/en/build-with-claude/fast-mode"
+source_retrieved_at = "2026-07-16"
+
+[schedules.selector]
+processing_mode = "fast"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "10.00"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "1.00"
+
+[[schedules.rates]]
+meter = "cache_write_5m_tokens"
+unit = "million_tokens"
+price = "12.50"
+
+[[schedules.rates]]
+meter = "cache_write_1h_tokens"
+unit = "million_tokens"
+price = "20.00"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "50.00"

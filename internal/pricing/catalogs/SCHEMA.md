@@ -42,7 +42,11 @@ whenever a listed card or the manifest changes.
 
 ## API-equivalent model cards
 
-Each model card owns one provider/model pair and one or more schedules:
+Each model card owns one provider/model pair and one or more schedules. A card's
+path is `<provider>/<model id>.toml`, spelling the provider's model identifier
+verbatim (e.g. `openai/gpt-4.1.toml`, `anthropic/claude-opus-4-6.toml`). The
+catalog never normalizes provider identifiers: the filename, the `[model] id`
+field, and the identifier a transcript reports are the same string.
 
 ```toml
 schema_version = 1

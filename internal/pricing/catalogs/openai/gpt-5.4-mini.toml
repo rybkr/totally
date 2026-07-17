@@ -26,3 +26,83 @@ price = "0.075"
 meter = "output_tokens"
 unit = "million_tokens"
 price = "4.50"
+
+[[schedules.rates]]
+meter = "web_search_requests"
+unit = "thousand_requests"
+price = "10.00"
+
+[[schedules]]
+effective_from = "2026-03-17"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://developers.openai.com/api/docs/pricing"
+source_retrieved_at = "2026-07-16"
+
+[schedules.selector]
+processing_mode = "batch"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "0.375"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.0375"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "2.25"
+
+[[schedules]]
+effective_from = "2026-03-17"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://developers.openai.com/api/docs/pricing"
+source_retrieved_at = "2026-07-16"
+
+[schedules.selector]
+processing_mode = "flex"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "0.375"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.0375"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "2.25"
+
+[[schedules]]
+effective_from = "2026-03-17"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://developers.openai.com/api/docs/pricing"
+source_retrieved_at = "2026-07-16"
+
+[schedules.selector]
+processing_mode = "priority"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "1.50"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.15"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "9.00"

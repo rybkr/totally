@@ -1,0 +1,89 @@
+# Bundled Anthropic API-equivalent price card.
+# Claude Mythos 5 shares Claude Fable 5's specs and pricing; it is restricted
+# to Project Glasswing (limited availability, not GA) but bills identically.
+schema_version = 1
+
+[model]
+provider = "anthropic"
+id = "claude-mythos-5"
+
+[[schedules]]
+effective_from = "2026-06-09"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://platform.claude.com/docs/en/about-claude/pricing"
+source_retrieved_at = "2026-07-16"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "10.00"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "1.00"
+
+[[schedules.rates]]
+meter = "cache_write_5m_tokens"
+unit = "million_tokens"
+price = "12.50"
+
+[[schedules.rates]]
+meter = "cache_write_1h_tokens"
+unit = "million_tokens"
+price = "20.00"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "50.00"
+
+[[schedules.rates]]
+meter = "web_search_requests"
+unit = "thousand_requests"
+price = "10.00"
+
+[[schedules.rates]]
+meter = "web_fetch_requests"
+unit = "thousand_requests"
+price = "0"
+
+# Message Batches API: 50% off every token meter (input, output, cache write,
+# cache read); prompt-caching multipliers apply on top of the batch-discounted
+# base rate per the source, which materializes to exactly half of every
+# standard-schedule token rate above.
+[[schedules]]
+effective_from = "2026-06-09"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://platform.claude.com/docs/en/about-claude/pricing"
+source_retrieved_at = "2026-07-16"
+
+[schedules.selector]
+processing_mode = "batch"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "5.00"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.50"
+
+[[schedules.rates]]
+meter = "cache_write_5m_tokens"
+unit = "million_tokens"
+price = "6.25"
+
+[[schedules.rates]]
+meter = "cache_write_1h_tokens"
+unit = "million_tokens"
+price = "10.00"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "25.00"

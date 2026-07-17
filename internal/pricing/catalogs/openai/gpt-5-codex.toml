@@ -26,3 +26,28 @@ price = "0.125"
 meter = "output_tokens"
 unit = "million_tokens"
 price = "10.00"
+
+[[schedules]]
+effective_from = "2025-09-15"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://developers.openai.com/api/docs/pricing"
+source_retrieved_at = "2026-07-16"
+
+[schedules.selector]
+processing_mode = "batch"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "0.625"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.0625"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "5.00"

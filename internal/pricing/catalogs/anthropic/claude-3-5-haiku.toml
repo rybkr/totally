@@ -1,0 +1,148 @@
+# Bundled Anthropic API-equivalent price card.
+#
+# Claude 3.5 Haiku (retired first-party except on Bedrock/Google Cloud, per
+# https://platform.claude.com/docs/en/about-claude/pricing) launched at one
+# price and was revised down less than a month later. Both periods are
+# recorded below. Historical rates are sourced from archive.org snapshots of
+# https://www.anthropic.com/pricing since the live page no longer shows the
+# launch-day figures.
+#
+# 1-hour cache-write pricing is intentionally omitted: archived snapshots
+# through at least 2025-09-02 show only a single ("5-minute TTL") prompt
+# caching write rate for this model, with extended/1-hour caching still
+# described as a beta "available at an additional cost" without a listed
+# rate. No sourced date was found for when a priced 1h cache-write rate began
+# applying to this model, so cache_write_1h_tokens is left unpriced rather
+# than guessed. web_search_requests / web_fetch_requests are omitted for the
+# same reason: no sourced evidence these server tools were billable for this
+# model during its active pricing periods.
+schema_version = 1
+
+[model]
+provider = "anthropic"
+id = "claude-3-5-haiku"
+
+# Launch pricing: 2024-11-04 through 2024-12-02 inclusive.
+[[schedules]]
+effective_from = "2024-11-04"
+effective_until = "2024-12-03"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://www.anthropic.com/pricing"
+source_archive_url = "https://web.archive.org/web/20241109014345/https://www.anthropic.com/pricing"
+source_retrieved_at = "2026-07-16"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "1.00"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.10"
+
+[[schedules.rates]]
+meter = "cache_write_5m_tokens"
+unit = "million_tokens"
+price = "1.25"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "5.00"
+
+# Launch period, Batch API (50% discount on token meters).
+[[schedules]]
+effective_from = "2024-11-04"
+effective_until = "2024-12-03"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://www.anthropic.com/pricing"
+source_archive_url = "https://web.archive.org/web/20241109014345/https://www.anthropic.com/pricing"
+source_retrieved_at = "2026-07-16"
+
+[schedules.selector]
+processing_mode = "batch"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "0.50"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.05"
+
+[[schedules.rates]]
+meter = "cache_write_5m_tokens"
+unit = "million_tokens"
+price = "0.625"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "2.50"
+
+# Revised pricing: 2024-12-03 onward (open; retirement from first-party sale
+# does not end this schedule, and no later price change was sourced).
+[[schedules]]
+effective_from = "2024-12-03"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://www.anthropic.com/pricing"
+source_archive_url = "https://web.archive.org/web/20241206032416/https://www.anthropic.com/pricing"
+source_retrieved_at = "2026-07-16"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "0.80"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.08"
+
+[[schedules.rates]]
+meter = "cache_write_5m_tokens"
+unit = "million_tokens"
+price = "1.00"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "4.00"
+
+# Revised period, Batch API (50% discount on token meters).
+[[schedules]]
+effective_from = "2024-12-03"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://www.anthropic.com/pricing"
+source_archive_url = "https://web.archive.org/web/20241206032416/https://www.anthropic.com/pricing"
+source_retrieved_at = "2026-07-16"
+
+[schedules.selector]
+processing_mode = "batch"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "0.40"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.04"
+
+[[schedules.rates]]
+meter = "cache_write_5m_tokens"
+unit = "million_tokens"
+price = "0.50"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "2.00"

@@ -1,0 +1,84 @@
+# Bundled Anthropic API-equivalent price card.
+schema_version = 1
+
+[model]
+provider = "anthropic"
+id = "claude-sonnet-4-6"
+
+[[schedules]]
+effective_from = "2026-02-17"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://platform.claude.com/docs/en/about-claude/pricing"
+source_retrieved_at = "2026-07-16"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "3.00"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.30"
+
+[[schedules.rates]]
+meter = "cache_write_5m_tokens"
+unit = "million_tokens"
+price = "3.75"
+
+[[schedules.rates]]
+meter = "cache_write_1h_tokens"
+unit = "million_tokens"
+price = "6.00"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "15.00"
+
+[[schedules.rates]]
+meter = "web_search_requests"
+unit = "thousand_requests"
+price = "10.00"
+
+[[schedules.rates]]
+meter = "web_fetch_requests"
+unit = "thousand_requests"
+price = "0"
+
+# Batch API (50% discount on token meters).
+[[schedules]]
+effective_from = "2026-02-17"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://platform.claude.com/docs/en/about-claude/pricing"
+source_retrieved_at = "2026-07-16"
+
+[schedules.selector]
+processing_mode = "batch"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "1.50"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.15"
+
+[[schedules.rates]]
+meter = "cache_write_5m_tokens"
+unit = "million_tokens"
+price = "1.875"
+
+[[schedules.rates]]
+meter = "cache_write_1h_tokens"
+unit = "million_tokens"
+price = "3.00"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "7.50"
