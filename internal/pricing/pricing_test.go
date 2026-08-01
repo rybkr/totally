@@ -179,6 +179,74 @@ func TestEstimateMarksUnknownCacheWriteSurchargePartial(t *testing.T) {
 	}
 }
 
+func TestEstimateMarksUnknownCacheWriteSurchargePartialForTTLSplitRates(t *testing.T) {
+	tests := []struct {
+		name                            string
+		cacheWrite5m, cacheWrite1h      string
+		want, lower, upper, uncertainty string
+	}{
+		{
+			// A rate that prices only 5m writes must still be bounded; it is
+			// the same one-sided interval a single cache-write rate produces.
+			name: "5m only", cacheWrite5m: "1.25",
+			want: "1.125", lower: "1", upper: "1.25", uncertainty: "0.125",
+		},
+		{
+			// With both retentions the writes could have been billed at
+			// either, so the interval spans the cheapest and dearest.
+			name: "5m and 1h", cacheWrite5m: "1.25", cacheWrite1h: "2",
+			want: "1.5", lower: "1", upper: "2", uncertainty: "0.5",
+		},
+		{
+			// Hypothetical: a retention priced below plain input pulls the
+			// interval below the base estimate as well as above it.
+			name: "one retention below input", cacheWrite5m: "0.5", cacheWrite1h: "2",
+			want: "1.25", lower: "0.5", upper: "2", uncertainty: "0.75",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			catalog := Catalog{}
+			if err := catalog.Override(Rate{
+				Provider: "test", Model: "writes", EffectiveFrom: "2020-01-01",
+				InputPerMillionUSD: "1", CachedInputPerMillionUSD: "0.1", OutputPerMillionUSD: "2",
+				CacheWrite5mPerMillionUSD: tt.cacheWrite5m, CacheWrite1hPerMillionUSD: tt.cacheWrite1h,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			estimate := catalog.Estimate([]session.UsageSegment{{Provider: "test", Model: "writes", TokenUsage: session.TokenUsage{InputTokens: 1_000_000}}}, time.Time{})
+			if estimate.Status != "partial" || len(estimate.Limitations) != 1 || estimate.AmountUSD == nil || *estimate.AmountUSD != tt.want {
+				t.Fatalf("unexpected TTL cache-write estimate: %+v", estimate)
+			}
+			if estimate.LowerBoundUSD == nil || *estimate.LowerBoundUSD != tt.lower ||
+				estimate.UpperBoundUSD == nil || *estimate.UpperBoundUSD != tt.upper ||
+				estimate.UncertaintyUSD == nil || *estimate.UncertaintyUSD != tt.uncertainty {
+				t.Fatalf("unexpected TTL cache-write bounds: %+v", estimate)
+			}
+		})
+	}
+}
+
+func TestEstimateBoundsCacheWriteSurchargeForBundledAnthropicRate(t *testing.T) {
+	at, _ := time.Parse(time.DateOnly, "2026-07-16")
+	estimate := DefaultCatalog().Estimate([]session.UsageSegment{{
+		Provider:   "anthropic",
+		Model:      "claude-haiku-4-5",
+		TokenUsage: session.TokenUsage{InputTokens: 1_000_000, TotalTokens: 1_000_000},
+	}}, at)
+
+	// Input 1.00, 5m writes 1.25, 1h writes 2.00 per million.
+	if estimate.Status != "partial" || estimate.AmountUSD == nil || *estimate.AmountUSD != "1.5" {
+		t.Fatalf("unexpected bundled cache-write estimate: %+v", estimate)
+	}
+	if estimate.LowerBoundUSD == nil || *estimate.LowerBoundUSD != "1" ||
+		estimate.UpperBoundUSD == nil || *estimate.UpperBoundUSD != "2" ||
+		estimate.UncertaintyUSD == nil || *estimate.UncertaintyUSD != "0.5" {
+		t.Fatalf("unexpected bundled cache-write bounds: %+v", estimate)
+	}
+}
+
 func TestEstimateAppliesIndependentLongContextScaleToDerivedCacheWriteRate(t *testing.T) {
 	catalog := Catalog{}
 	if err := catalog.Override(Rate{

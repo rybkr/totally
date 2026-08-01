@@ -381,23 +381,18 @@ func (c Catalog) Estimate(segments []session.UsageSegment, at time.Time) Estimat
 		lowerTotal += amount
 		upperTotal += amount
 		componentAmount := amount
-		if rate.CacheWriteInputScale != "" || rate.CacheWritePerMillionUSD != "" {
-			additional, err := cacheWriteUncertaintyNanos(segment.TokenUsage, rate)
-			if err != nil {
-				result.Missing = append(result.Missing, MissingRate{Provider: segment.Provider, Model: segment.Model})
-				unbounded = true
-				continue
-			}
-			if additional != 0 {
-				if additional > 0 {
-					upperTotal += additional
-				} else {
-					lowerTotal += additional
-				}
-				componentAmount = amount + additional/2
-				bounded = true
-				addUniqueString(&result.Limitations, "cache-write tokens are not identified in the session transcript; estimate uses the midpoint of the possible surcharge")
-			}
+		belowBase, aboveBase, err := cacheWriteUncertaintyNanos(segment.TokenUsage, rate)
+		if err != nil {
+			result.Missing = append(result.Missing, MissingRate{Provider: segment.Provider, Model: segment.Model})
+			unbounded = true
+			continue
+		}
+		if belowBase != 0 || aboveBase != 0 {
+			lowerTotal += belowBase
+			upperTotal += aboveBase
+			componentAmount = amount + (belowBase+aboveBase)/2
+			bounded = true
+			addUniqueString(&result.Limitations, "cache-write tokens are not identified in the session transcript; estimate uses the midpoint of the possible surcharge")
 		}
 		result.Components = append(result.Components, Component{Provider: segment.Provider, Model: segment.Model, TokenUsage: segment.TokenUsage, AmountUSD: formatNanos(componentAmount)})
 	}
@@ -449,19 +444,48 @@ func tokenBreakdownBoundsNanos(usage session.TokenUsage, rate Rate) (int64, int6
 	return usage.TotalTokens * minimum / tokensPerRate, usage.TotalTokens * maximum / tokensPerRate, nil
 }
 
-// cacheWriteUncertaintyNanos returns the greatest possible change from the
-// base estimate when any portion of uncached input could instead be cache
-// writes. Codex telemetry does not identify that portion.
-func cacheWriteUncertaintyNanos(usage session.TokenUsage, rate Rate) (int64, error) {
+// cacheWriteUncertaintyNanos returns how far the true cost could fall below
+// and rise above the base estimate when any portion of uncached input could
+// instead be cache writes. Neither Codex nor Claude Code telemetry identifies
+// that portion.
+//
+// A rate may price cache writes at one rate or, where the provider bills by
+// retention, at a 5m and a 1h rate. With more than one candidate the writes
+// could have been billed at any of them, so the interval spans the cheapest
+// and dearest candidate. Zero is always in the interval: the tokens may have
+// been plain uncached input, which the base estimate already assumes.
+func cacheWriteUncertaintyNanos(usage session.TokenUsage, rate Rate) (int64, int64, error) {
 	parsed, err := meterRatesFor(rate, usage)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	uncached := usage.InputTokens - usage.CachedInputTokens
 	if uncached < 0 {
 		uncached = 0
 	}
-	return uncached * (parsed.CacheWrite - parsed.Input) / tokensPerRate, nil
+	// Presence is decided by the configured fields rather than the parsed
+	// rate, so an explicit free cache write ("0") still widens the interval.
+	var below, above int64
+	for _, candidate := range []struct {
+		configured bool
+		rate       int64
+	}{
+		{rate.CacheWritePerMillionUSD != "" || rate.CacheWriteInputScale != "", parsed.CacheWrite},
+		{rate.CacheWrite5mPerMillionUSD != "", parsed.CacheWrite5m},
+		{rate.CacheWrite1hPerMillionUSD != "", parsed.CacheWrite1h},
+	} {
+		if !candidate.configured {
+			continue
+		}
+		delta := uncached * (candidate.rate - parsed.Input) / tokensPerRate
+		if delta < below {
+			below = delta
+		}
+		if delta > above {
+			above = delta
+		}
+	}
+	return below, above, nil
 }
 
 // hasUnpriceableTokenBreakdown reports a usage record that proves tokens were
