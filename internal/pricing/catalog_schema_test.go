@@ -34,8 +34,28 @@ type priceSchedule struct {
 	SourceURL         string           `toml:"source_url"`
 	SourceRetrievedAt string           `toml:"source_retrieved_at"`
 	SourceArchiveURL  string           `toml:"source_archive_url"`
+	Selector          scheduleSelector `toml:"selector"`
 	Rates             []catalogRate    `toml:"rates"`
 	Adjustments       []rateAdjustment `toml:"adjustments"`
+}
+
+type scheduleSelector struct {
+	Platform           string `toml:"platform"`
+	ProcessingMode     string `toml:"processing_mode"`
+	InferenceGeography string `toml:"inference_geography"`
+}
+
+func (s scheduleSelector) materialized() scheduleSelector {
+	if s.Platform == "" {
+		s.Platform = "first_party"
+	}
+	if s.ProcessingMode == "" {
+		s.ProcessingMode = "standard"
+	}
+	if s.InferenceGeography == "" {
+		s.InferenceGeography = "global"
+	}
+	return s
 }
 
 type catalogRate struct {
@@ -140,7 +160,10 @@ func validateModelCard(t *testing.T, name string, card modelCard) {
 		t.Errorf("filename does not match model id %q", card.Model.ID)
 	}
 
-	type interval struct{ from, until time.Time }
+	type interval struct {
+		from, until time.Time
+		selector    scheduleSelector
+	}
 	intervals := make([]interval, 0, len(card.Schedules))
 	for _, schedule := range card.Schedules {
 		from := parseCatalogDate(t, schedule.EffectiveFrom)
@@ -151,7 +174,8 @@ func validateModelCard(t *testing.T, name string, card modelCard) {
 				t.Error("effective_until must be after effective_from")
 			}
 		}
-		intervals = append(intervals, interval{from: from, until: until})
+		selector := schedule.Selector.materialized()
+		intervals = append(intervals, interval{from: from, until: until, selector: selector})
 		if schedule.Basis != "api_equivalent" || schedule.Currency != "USD" || schedule.SourceURL == "" || schedule.SourceRetrievedAt == "" {
 			t.Errorf("invalid schedule metadata: %+v", schedule)
 		}
@@ -159,10 +183,13 @@ func validateModelCard(t *testing.T, name string, card modelCard) {
 		if len(schedule.Rates) == 0 {
 			t.Error("schedule must contain at least one rate")
 		}
+		if err := validateBundledSelector(card.Model.Provider, bundledSelector(selector)); err != nil {
+			t.Errorf("invalid selector: %v", err)
+		}
 
 		rates := make(map[string]bool)
 		for _, rate := range schedule.Rates {
-			if !knownMeter(rate.Meter) || rate.Unit != "million_tokens" {
+			if unit := knownMeterUnit(rate.Meter); unit == "" || rate.Unit != unit {
 				t.Errorf("invalid rate meter or unit: %+v", rate)
 			}
 			if rates[rate.Meter] {
@@ -172,6 +199,9 @@ func validateModelCard(t *testing.T, name string, card modelCard) {
 			if _, err := parseUSDNanos(rate.Price); err != nil {
 				t.Errorf("invalid rate price %q: %v", rate.Price, err)
 			}
+		}
+		if rates["cache_write_tokens"] && (rates["cache_write_5m_tokens"] || rates["cache_write_1h_tokens"]) {
+			t.Error("schedule mixes cache_write_tokens with TTL-specific cache-write meters")
 		}
 
 		adjusted := make(map[string]bool)
@@ -192,6 +222,9 @@ func validateModelCard(t *testing.T, name string, card modelCard) {
 	}
 	for i := range intervals {
 		for j := i + 1; j < len(intervals); j++ {
+			if intervals[i].selector != intervals[j].selector {
+				continue
+			}
 			if intervalsOverlap(intervals[i].from, intervals[i].until, intervals[j].from, intervals[j].until) {
 				t.Errorf("schedules %d and %d overlap", i, j)
 			}
@@ -214,6 +247,13 @@ func parseCatalogDate(t *testing.T, value string) time.Time {
 	return parsed
 }
 
-func knownMeter(meter string) bool {
-	return meter == "input_tokens" || meter == "cached_input_tokens" || meter == "output_tokens" || meter == "cache_write_tokens"
+func knownMeterUnit(meter string) string {
+	switch meter {
+	case "input_tokens", "cached_input_tokens", "output_tokens",
+		"cache_write_tokens", "cache_write_5m_tokens", "cache_write_1h_tokens":
+		return "million_tokens"
+	case "web_search_requests", "web_fetch_requests":
+		return "thousand_requests"
+	}
+	return ""
 }

@@ -19,17 +19,51 @@ const (
 var CatalogVersion = loadedBundledCatalog.version
 
 type Rate struct {
-	Provider                 string        `json:"provider" mapstructure:"provider"`
-	Model                    string        `json:"model" mapstructure:"model"`
-	InputPerMillionUSD       string        `json:"input_per_million_usd" mapstructure:"input_per_million_usd"`
-	CachedInputPerMillionUSD string        `json:"cached_input_per_million_usd" mapstructure:"cached_input_per_million_usd"`
-	OutputPerMillionUSD      string        `json:"output_per_million_usd" mapstructure:"output_per_million_usd"`
-	Source                   string        `json:"source" mapstructure:"source"`
-	EffectiveFrom            string        `json:"effective_from" mapstructure:"effective_from"`
-	EffectiveUntil           string        `json:"effective_until,omitempty" mapstructure:"effective_until"`
-	CacheWriteInputScale     string        `json:"cache_write_input_scale,omitempty" mapstructure:"cache_write_input_scale"`
-	CacheWritePerMillionUSD  string        `json:"cache_write_per_million_usd,omitempty" mapstructure:"cache_write_per_million_usd"`
-	Rules                    []PricingRule `json:"rules,omitempty" mapstructure:"-"`
+	Provider                 string `json:"provider" mapstructure:"provider"`
+	Model                    string `json:"model" mapstructure:"model"`
+	InputPerMillionUSD       string `json:"input_per_million_usd" mapstructure:"input_per_million_usd"`
+	CachedInputPerMillionUSD string `json:"cached_input_per_million_usd" mapstructure:"cached_input_per_million_usd"`
+	OutputPerMillionUSD      string `json:"output_per_million_usd" mapstructure:"output_per_million_usd"`
+	Source                   string `json:"source" mapstructure:"source"`
+	EffectiveFrom            string `json:"effective_from" mapstructure:"effective_from"`
+	EffectiveUntil           string `json:"effective_until,omitempty" mapstructure:"effective_until"`
+	CacheWriteInputScale     string `json:"cache_write_input_scale,omitempty" mapstructure:"cache_write_input_scale"`
+	CacheWritePerMillionUSD  string `json:"cache_write_per_million_usd,omitempty" mapstructure:"cache_write_per_million_usd"`
+	// TTL-specific cache-write rates, for providers that price cache writes
+	// by retention. A rate carries either CacheWritePerMillionUSD or the
+	// TTL-specific pair, never both.
+	CacheWrite5mPerMillionUSD string `json:"cache_write_5m_per_million_usd,omitempty" mapstructure:"cache_write_5m_per_million_usd"`
+	CacheWrite1hPerMillionUSD string `json:"cache_write_1h_per_million_usd,omitempty" mapstructure:"cache_write_1h_per_million_usd"`
+	// Request-denominated server-tool rates, in USD per thousand invocations.
+	// An explicit "0" asserts the rate was considered; empty means unpriced.
+	WebSearchPerThousandUSD string `json:"web_search_per_thousand_usd,omitempty" mapstructure:"web_search_per_thousand_usd"`
+	WebFetchPerThousandUSD  string `json:"web_fetch_per_thousand_usd,omitempty" mapstructure:"web_fetch_per_thousand_usd"`
+	// Selector tuple. An empty field is equivalent to its standard value
+	// (first_party / standard / global); normalizeSelector materializes the
+	// defaults before rates are matched.
+	Platform           string        `json:"platform,omitempty" mapstructure:"platform"`
+	ProcessingMode     string        `json:"processing_mode,omitempty" mapstructure:"processing_mode"`
+	InferenceGeography string        `json:"inference_geography,omitempty" mapstructure:"inference_geography"`
+	Rules              []PricingRule `json:"rules,omitempty" mapstructure:"-"`
+}
+
+// rateSelector is a materialized selector tuple used as a matching key.
+type rateSelector struct{ platform, processingMode, inferenceGeography string }
+
+var defaultRateSelector = rateSelector{platform: "first_party", processingMode: "standard", inferenceGeography: "global"}
+
+func normalizeSelector(rate Rate) rateSelector {
+	selector := rateSelector{platform: rate.Platform, processingMode: rate.ProcessingMode, inferenceGeography: rate.InferenceGeography}
+	if selector.platform == "" {
+		selector.platform = defaultRateSelector.platform
+	}
+	if selector.processingMode == "" {
+		selector.processingMode = defaultRateSelector.processingMode
+	}
+	if selector.inferenceGeography == "" {
+		selector.inferenceGeography = defaultRateSelector.inferenceGeography
+	}
+	return selector
 }
 
 type MissingRate struct {
@@ -77,9 +111,14 @@ func DefaultCatalog() Catalog {
 func (c Catalog) Rates() []Rate {
 	rates := append([]Rate(nil), c.rates...)
 	sort.Slice(rates, func(i, j int) bool {
-		return rates[i].Provider+"/"+rates[i].Model < rates[j].Provider+"/"+rates[j].Model
+		return rateSortKey(rates[i]) < rateSortKey(rates[j])
 	})
 	return rates
+}
+
+func rateSortKey(rate Rate) string {
+	selector := normalizeSelector(rate)
+	return strings.Join([]string{rate.Provider, rate.Model, selector.platform, selector.processingMode, selector.inferenceGeography, rate.EffectiveFrom}, "/")
 }
 
 // SetEarlyAccess allows the earliest known rate for a model to price sessions
@@ -105,7 +144,7 @@ func (c Catalog) Validate() error {
 		}
 		matches := 0
 		for _, candidate := range c.rates {
-			if candidate.Provider != rate.Provider || candidate.Model != rate.Model {
+			if candidate.Provider != rate.Provider || candidate.Model != rate.Model || normalizeSelector(candidate) != normalizeSelector(rate) {
 				continue
 			}
 			candidateFrom, _ := time.Parse(time.DateOnly, candidate.EffectiveFrom)
@@ -158,13 +197,27 @@ func ValidateRate(rate Rate) []ValidationIssue {
 	if !from.IsZero() && !until.IsZero() && !from.Before(until) {
 		issues = append(issues, ValidationIssue{Field: "effective_until", Message: "must be after effective_from"})
 	}
-	for _, value := range []struct{ field, value string }{{"input_per_million_usd", rate.InputPerMillionUSD}, {"cached_input_per_million_usd", rate.CachedInputPerMillionUSD}, {"output_per_million_usd", rate.OutputPerMillionUSD}, {"cache_write_per_million_usd", rate.CacheWritePerMillionUSD}} {
+	required := map[string]bool{"input_per_million_usd": true, "cached_input_per_million_usd": true, "output_per_million_usd": true}
+	for _, value := range []struct{ field, value string }{
+		{"input_per_million_usd", rate.InputPerMillionUSD},
+		{"cached_input_per_million_usd", rate.CachedInputPerMillionUSD},
+		{"output_per_million_usd", rate.OutputPerMillionUSD},
+		{"cache_write_per_million_usd", rate.CacheWritePerMillionUSD},
+		{"cache_write_5m_per_million_usd", rate.CacheWrite5mPerMillionUSD},
+		{"cache_write_1h_per_million_usd", rate.CacheWrite1hPerMillionUSD},
+		{"web_search_per_thousand_usd", rate.WebSearchPerThousandUSD},
+		{"web_fetch_per_thousand_usd", rate.WebFetchPerThousandUSD},
+	} {
 		if value.value != "" {
 			add(value.field, func() error { _, err := parseUSDNanos(value.value); return err }())
-		} else if value.field != "cache_write_per_million_usd" {
+		} else if required[value.field] {
 			issues = append(issues, ValidationIssue{Field: value.field, Message: "is required"})
 		}
 	}
+	if rate.CacheWritePerMillionUSD != "" && (rate.CacheWrite5mPerMillionUSD != "" || rate.CacheWrite1hPerMillionUSD != "") {
+		issues = append(issues, ValidationIssue{Field: "cache_write_per_million_usd", Message: "must not be combined with TTL-specific cache-write rates"})
+	}
+	issues = append(issues, validateRateSelector(rate)...)
 	for _, value := range []struct{ field, value string }{{"cache_write_input_scale", rate.CacheWriteInputScale}} {
 		if value.value != "" {
 			add(value.field, func() error { _, err := parseScale(value.value); return err }())
@@ -176,6 +229,36 @@ func ValidateRate(rate Rate) []ValidationIssue {
 			continue
 		}
 		issues = append(issues, rule.Validate()...)
+	}
+	return issues
+}
+
+// validateRateSelector enforces the closed selector enums on a configured
+// rate. Provider-specific processing-mode restrictions apply only to the
+// providers whose public price paths are known to the catalog.
+func validateRateSelector(rate Rate) []ValidationIssue {
+	var issues []ValidationIssue
+	selector := normalizeSelector(rate)
+	if selector.platform != "first_party" {
+		issues = append(issues, ValidationIssue{Field: "platform", Message: "must be first_party"})
+	}
+	switch selector.processingMode {
+	case "standard", "batch":
+	case "flex", "priority":
+		if rate.Provider == "anthropic" {
+			issues = append(issues, ValidationIssue{Field: "processing_mode", Message: fmt.Sprintf("%q is not an anthropic billing distinction", selector.processingMode)})
+		}
+	case "fast":
+		if rate.Provider == "openai" {
+			issues = append(issues, ValidationIssue{Field: "processing_mode", Message: `"fast" is not an openai billing distinction`})
+		}
+	default:
+		issues = append(issues, ValidationIssue{Field: "processing_mode", Message: "must be standard, batch, flex, priority, or fast"})
+	}
+	switch selector.inferenceGeography {
+	case "global", "regional", "us":
+	default:
+		issues = append(issues, ValidationIssue{Field: "inference_geography", Message: "must be global, regional, or us"})
 	}
 	return issues
 }
@@ -192,7 +275,7 @@ func (c *Catalog) Override(rate Rate) error {
 	}
 	kept := c.rates[:0]
 	for _, existing := range c.rates {
-		if existing.Provider != rate.Provider || existing.Model != rate.Model {
+		if existing.Provider != rate.Provider || existing.Model != rate.Model || normalizeSelector(existing) != normalizeSelector(rate) {
 			kept = append(kept, existing)
 		}
 	}
@@ -219,7 +302,7 @@ func (c *Catalog) Overlay(rate Rate) error {
 	}
 	kept := make([]Rate, 0, len(c.rates)+2)
 	for _, existing := range c.rates {
-		if existing.Provider != rate.Provider || existing.Model != rate.Model {
+		if existing.Provider != rate.Provider || existing.Model != rate.Model || normalizeSelector(existing) != normalizeSelector(rate) {
 			kept = append(kept, existing)
 			continue
 		}
@@ -268,7 +351,7 @@ func (c Catalog) Estimate(segments []session.UsageSegment, at time.Time) Estimat
 		if rateAt.IsZero() {
 			rateAt = at
 		}
-		rate, ok := c.lookup(segment.Provider, segment.Model, rateAt)
+		rate, ok := c.lookup(segment.Provider, segment.Model, defaultRateSelector, rateAt)
 		if !ok {
 			result.Missing = append(result.Missing, MissingRate{Provider: segment.Provider, Model: segment.Model})
 			unbounded = true
@@ -349,8 +432,10 @@ func tokenBreakdownBoundsNanos(usage session.TokenUsage, rate Rate) (int64, int6
 		return 0, 0, err
 	}
 	rates := []int64{parsed.Input, parsed.CachedInput, parsed.Output}
-	if parsed.CacheWrite != 0 {
-		rates = append(rates, parsed.CacheWrite)
+	for _, cacheWrite := range []int64{parsed.CacheWrite, parsed.CacheWrite5m, parsed.CacheWrite1h} {
+		if cacheWrite != 0 {
+			rates = append(rates, cacheWrite)
+		}
 	}
 	minimum, maximum := rates[0], rates[0]
 	for _, candidate := range rates[1:] {
@@ -399,12 +484,16 @@ func addUniqueString(values *[]string, value string) {
 	*values = append(*values, value)
 }
 
-func (c Catalog) lookup(provider, model string, at time.Time) (Rate, bool) {
+// lookup resolves the schedule for a provider/model at an instant under the
+// given selector tuple. Estimate currently resolves every priceable segment
+// to the default tuple; mapping transcript telemetry (e.g. service tiers) to
+// non-default tuples is adapter normalization that happens before lookup.
+func (c Catalog) lookup(provider, model string, selector rateSelector, at time.Time) (Rate, bool) {
 	var earliest Rate
 	var earliestFrom time.Time
 	foundEarliest := false
 	for _, rate := range c.rates {
-		if rate.Provider != provider || rate.Model != model {
+		if rate.Provider != provider || rate.Model != model || normalizeSelector(rate) != selector {
 			continue
 		}
 		if c.earlyAccess && !at.IsZero() {
@@ -458,6 +547,17 @@ func meterRatesFor(rate Rate, usage session.TokenUsage) (MeterRates, error) {
 		return MeterRates{}, err
 	}
 	rates := MeterRates{Input: parsed.input, CachedInput: parsed.cached, Output: parsed.output}
+	for _, cacheWrite := range []struct {
+		text string
+		rate *int64
+	}{{rate.CacheWrite5mPerMillionUSD, &rates.CacheWrite5m}, {rate.CacheWrite1hPerMillionUSD, &rates.CacheWrite1h}} {
+		if cacheWrite.text == "" {
+			continue
+		}
+		if *cacheWrite.rate, err = parseUSDNanos(cacheWrite.text); err != nil {
+			return MeterRates{}, err
+		}
+	}
 	if rate.CacheWritePerMillionUSD != "" {
 		rates.CacheWrite, err = parseUSDNanos(rate.CacheWritePerMillionUSD)
 		if err != nil {

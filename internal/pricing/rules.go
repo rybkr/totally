@@ -14,10 +14,12 @@ type PricingContext struct {
 // price is being calculated. Rules return a modified copy; they must not
 // mutate shared catalog state.
 type MeterRates struct {
-	Input       int64
-	CachedInput int64
-	Output      int64
-	CacheWrite  int64
+	Input        int64
+	CachedInput  int64
+	Output       int64
+	CacheWrite   int64
+	CacheWrite5m int64
+	CacheWrite1h int64
 }
 
 // PricingRule changes the applicable meter rates for one usage segment.
@@ -31,12 +33,14 @@ type PricingRule interface {
 // LongContextRule applies alternate multipliers when a request exceeds its
 // input-token threshold. Empty scales mean no change to that meter.
 type LongContextRule struct {
-	Type             string `json:"type"`
-	ThresholdTokens  int64  `json:"threshold_tokens"`
-	InputScale       string `json:"input_scale,omitempty"`
-	CachedInputScale string `json:"cached_input_scale,omitempty"`
-	OutputScale      string `json:"output_scale,omitempty"`
-	CacheWriteScale  string `json:"cache_write_scale,omitempty"`
+	Type              string `json:"type"`
+	ThresholdTokens   int64  `json:"threshold_tokens"`
+	InputScale        string `json:"input_scale,omitempty"`
+	CachedInputScale  string `json:"cached_input_scale,omitempty"`
+	OutputScale       string `json:"output_scale,omitempty"`
+	CacheWriteScale   string `json:"cache_write_scale,omitempty"`
+	CacheWrite5mScale string `json:"cache_write_5m_scale,omitempty"`
+	CacheWrite1hScale string `json:"cache_write_1h_scale,omitempty"`
 }
 
 func (r LongContextRule) Apply(ctx PricingContext, rates MeterRates) (MeterRates, error) {
@@ -51,7 +55,7 @@ func (r LongContextRule) Apply(ctx PricingContext, rates MeterRates) (MeterRates
 		name  string
 		scale string
 		rate  *int64
-	}{{"input_scale", r.InputScale, &rates.Input}, {"cached_input_scale", r.CachedInputScale, &rates.CachedInput}, {"output_scale", r.OutputScale, &rates.Output}, {"cache_write_scale", r.CacheWriteScale, &rates.CacheWrite}} {
+	}{{"input_scale", r.InputScale, &rates.Input}, {"cached_input_scale", r.CachedInputScale, &rates.CachedInput}, {"output_scale", r.OutputScale, &rates.Output}, {"cache_write_scale", r.CacheWriteScale, &rates.CacheWrite}, {"cache_write_5m_scale", r.CacheWrite5mScale, &rates.CacheWrite5m}, {"cache_write_1h_scale", r.CacheWrite1hScale, &rates.CacheWrite1h}} {
 		scale, err := parseScale(target.scale)
 		if err != nil {
 			return MeterRates{}, fmt.Errorf("%s: %w", target.name, err)
@@ -80,7 +84,7 @@ func (r LongContextRule) Validate() []ValidationIssue {
 	if r.ThresholdTokens < 0 {
 		issues = append(issues, ValidationIssue{Field: "rules.threshold_tokens", Message: "must be non-negative"})
 	}
-	for _, value := range []struct{ field, value string }{{"rules.input_scale", r.InputScale}, {"rules.cached_input_scale", r.CachedInputScale}, {"rules.output_scale", r.OutputScale}, {"rules.cache_write_scale", r.CacheWriteScale}} {
+	for _, value := range []struct{ field, value string }{{"rules.input_scale", r.InputScale}, {"rules.cached_input_scale", r.CachedInputScale}, {"rules.output_scale", r.OutputScale}, {"rules.cache_write_scale", r.CacheWriteScale}, {"rules.cache_write_5m_scale", r.CacheWrite5mScale}, {"rules.cache_write_1h_scale", r.CacheWrite1hScale}} {
 		if value.value != "" {
 			if _, err := parseScale(value.value); err != nil {
 				issues = append(issues, ValidationIssue{Field: value.field, Message: err.Error()})

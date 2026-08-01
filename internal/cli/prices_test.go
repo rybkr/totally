@@ -72,10 +72,12 @@ source = "user"
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Rates) != 2 {
+	// gpt-5 bundles a standard schedule and a distinct batch schedule; a
+	// standard-scoped override/overlay must not touch the batch schedule.
+	if len(result.Rates) != 3 {
 		t.Fatalf("unexpected rates: %+v", result.Rates)
 	}
-	var foundOverride, foundHistorical bool
+	var foundOverride, foundHistorical, foundBatch bool
 	for _, rate := range result.Rates {
 		if rate.InputPerMillionUSD == "2" && rate.Source == "user" && rate.EffectiveFrom == "2026-01-01" {
 			foundOverride = true
@@ -83,9 +85,12 @@ source = "user"
 		if rate.EffectiveUntil == "2026-01-01" {
 			foundHistorical = true
 		}
+		if rate.ProcessingMode == "batch" {
+			foundBatch = true
+		}
 	}
-	if !foundOverride || !foundHistorical {
-		t.Fatalf("override or historical rate missing: %+v", result.Rates)
+	if !foundOverride || !foundHistorical || !foundBatch {
+		t.Fatalf("override, historical, or batch rate missing: %+v", result.Rates)
 	}
 }
 
@@ -147,8 +152,23 @@ replace = true
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Rates) != 1 || result.Rates[0].EffectiveFrom != "2026-01-01" {
+	// replace=true is scoped to the standard selector tuple the override
+	// targets; gpt-5's distinct batch schedule is a separate history and
+	// survives the replace.
+	if len(result.Rates) != 2 {
 		t.Fatalf("unexpected rates: %+v", result.Rates)
+	}
+	var foundReplacement, foundBatch bool
+	for _, rate := range result.Rates {
+		if rate.EffectiveFrom == "2026-01-01" && rate.ProcessingMode != "batch" {
+			foundReplacement = true
+		}
+		if rate.ProcessingMode == "batch" {
+			foundBatch = true
+		}
+	}
+	if !foundReplacement || !foundBatch {
+		t.Fatalf("replacement or surviving batch rate missing: %+v", result.Rates)
 	}
 }
 

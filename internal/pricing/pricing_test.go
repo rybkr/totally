@@ -12,12 +12,17 @@ func TestDefaultCatalogContainsSupportedCodexAndRelatedModels(t *testing.T) {
 	rates := DefaultCatalog().Rates()
 	models := make([]string, 0, len(rates))
 	for _, rate := range rates {
-		if rate.Provider != "openai" {
+		if rate.Provider != "openai" && rate.Provider != "anthropic" {
 			t.Fatalf("unexpected provider in default catalog: %+v", rate)
 		}
 		models = append(models, rate.Model)
 	}
 	for _, model := range []string{
+		"claude-fable-5",
+		"claude-opus-4-8",
+		"claude-sonnet-5",
+		"claude-haiku-4-5",
+		"claude-3-5-haiku",
 		"codex-mini-latest",
 		"gpt-4.1",
 		"gpt-5",
@@ -50,13 +55,16 @@ func TestDefaultCatalogIsLoadedFromEmbeddedManifestAndCards(t *testing.T) {
 
 	var luna Rate
 	for _, rate := range DefaultCatalog().Rates() {
-		if rate.Provider == "openai" && rate.Model == "gpt-5.6-luna" {
+		if rate.Provider == "openai" && rate.Model == "gpt-5.6-luna" && rate.ProcessingMode == "standard" {
 			luna = rate
 			break
 		}
 	}
 	if luna.InputPerMillionUSD != "1.00" || luna.CacheWritePerMillionUSD != "1.25" || len(luna.Rules) != 1 {
 		t.Fatalf("embedded gpt-5.6-luna card was not translated correctly: %+v", luna)
+	}
+	if luna.Platform != "first_party" || luna.InferenceGeography != "global" {
+		t.Fatalf("selector defaults were not materialized: %+v", luna)
 	}
 }
 
@@ -65,10 +73,10 @@ func TestLookupHonorsEffectiveUntil(t *testing.T) {
 		Provider: "test", Model: "model", InputPerMillionUSD: "1", CachedInputPerMillionUSD: "1", OutputPerMillionUSD: "1",
 		EffectiveFrom: "2026-01-01", EffectiveUntil: "2026-02-01",
 	}}}
-	if _, ok := catalog.lookup("test", "model", time.Date(2026, time.January, 31, 0, 0, 0, 0, time.UTC)); !ok {
+	if _, ok := catalog.lookup("test", "model", defaultRateSelector, time.Date(2026, time.January, 31, 0, 0, 0, 0, time.UTC)); !ok {
 		t.Fatal("rate should apply before effective_until")
 	}
-	if _, ok := catalog.lookup("test", "model", time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)); ok {
+	if _, ok := catalog.lookup("test", "model", defaultRateSelector, time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)); ok {
 		t.Fatal("rate should not apply at effective_until")
 	}
 }
@@ -79,15 +87,15 @@ func TestLookupEarlyAccessUsesEarliestKnownRateOnlyBeforeFirstSchedule(t *testin
 		{Provider: "test", Model: "model", EffectiveFrom: "2026-03-01", InputPerMillionUSD: "2", CachedInputPerMillionUSD: "2", OutputPerMillionUSD: "2"},
 	}}
 	beforeFirst, _ := time.Parse(time.DateOnly, "2026-01-01")
-	if _, ok := catalog.lookup("test", "model", beforeFirst); ok {
+	if _, ok := catalog.lookup("test", "model", defaultRateSelector, beforeFirst); ok {
 		t.Fatal("early access must be disabled by default")
 	}
 	catalog.SetEarlyAccess(true)
-	if rate, ok := catalog.lookup("test", "model", beforeFirst); !ok || rate.InputPerMillionUSD != "1" {
+	if rate, ok := catalog.lookup("test", "model", defaultRateSelector, beforeFirst); !ok || rate.InputPerMillionUSD != "1" {
 		t.Fatalf("early-access rate = %+v, %v; want earliest rate", rate, ok)
 	}
 	atSecond, _ := time.Parse(time.DateOnly, "2026-03-15")
-	if rate, ok := catalog.lookup("test", "model", atSecond); !ok || rate.InputPerMillionUSD != "2" {
+	if rate, ok := catalog.lookup("test", "model", defaultRateSelector, atSecond); !ok || rate.InputPerMillionUSD != "2" {
 		t.Fatalf("rate after scheduled change = %+v, %v; want second rate", rate, ok)
 	}
 }
@@ -145,7 +153,7 @@ func TestOverlayPreservesSurroundingModelHistory(t *testing.T) {
 		{"2025-02-01", "1"}, {"2025-04-01", "9"}, {"2025-07-01", "9"}, {"2025-10-01", "2"},
 	} {
 		at, _ := time.Parse(time.DateOnly, check.at)
-		rate, ok := catalog.lookup("test", "model", at)
+		rate, ok := catalog.lookup("test", "model", defaultRateSelector, at)
 		if !ok || rate.InputPerMillionUSD != check.want {
 			t.Errorf("rate at %s = %+v, %v; want input %s", check.at, rate, ok, check.want)
 		}

@@ -35,11 +35,34 @@ type bundledSchedule struct {
 	Basis          string              `toml:"basis"`
 	Currency       string              `toml:"currency"`
 	SourceURL      string              `toml:"source_url"`
+	Selector       bundledSelector     `toml:"selector"`
 	Rates          []bundledRate       `toml:"rates"`
 	Adjustments    []bundledAdjustment `toml:"adjustments"`
 	// Provenance is retained in the TOML cards; Rate exposes the source URL.
 	SourceRetrievedAt string `toml:"source_retrieved_at"`
 	SourceArchiveURL  string `toml:"source_archive_url"`
+}
+
+// bundledSelector carries the closed-enum billing axes that choose a schedule
+// alongside time. An omitted field is equivalent to its standard value;
+// loading materializes the defaults before matching.
+type bundledSelector struct {
+	Platform           string `toml:"platform"`
+	ProcessingMode     string `toml:"processing_mode"`
+	InferenceGeography string `toml:"inference_geography"`
+}
+
+func (s bundledSelector) materialized() bundledSelector {
+	if s.Platform == "" {
+		s.Platform = "first_party"
+	}
+	if s.ProcessingMode == "" {
+		s.ProcessingMode = "standard"
+	}
+	if s.InferenceGeography == "" {
+		s.InferenceGeography = "global"
+	}
+	return s
 }
 
 type bundledRate struct {
@@ -91,10 +114,15 @@ func mustLoadBundledCatalog() struct {
 			if schedule.Basis != "api_equivalent" || schedule.Currency != "USD" || schedule.SourceURL == "" || schedule.SourceRetrievedAt == "" {
 				panic(fmt.Sprintf("pricing: invalid embedded schedule in %q", name))
 			}
-			rate := Rate{Provider: card.Model.Provider, Model: card.Model.ID, Source: schedule.SourceURL, EffectiveFrom: schedule.EffectiveFrom, EffectiveUntil: schedule.EffectiveUntil}
+			selector := schedule.Selector.materialized()
+			rate := Rate{
+				Provider: card.Model.Provider, Model: card.Model.ID,
+				Platform: selector.Platform, ProcessingMode: selector.ProcessingMode, InferenceGeography: selector.InferenceGeography,
+				Source: schedule.SourceURL, EffectiveFrom: schedule.EffectiveFrom, EffectiveUntil: schedule.EffectiveUntil,
+			}
 			for _, item := range schedule.Rates {
-				if item.Unit != "million_tokens" {
-					panic(fmt.Sprintf("pricing: unsupported rate unit %q in %q", item.Unit, name))
+				if bundledMeterUnit(item.Meter) != item.Unit {
+					panic(fmt.Sprintf("pricing: unsupported meter %q or unit %q in %q", item.Meter, item.Unit, name))
 				}
 				switch item.Meter {
 				case "input_tokens":
@@ -105,6 +133,14 @@ func mustLoadBundledCatalog() struct {
 					rate.OutputPerMillionUSD = item.Price
 				case "cache_write_tokens":
 					rate.CacheWritePerMillionUSD = item.Price
+				case "cache_write_5m_tokens":
+					rate.CacheWrite5mPerMillionUSD = item.Price
+				case "cache_write_1h_tokens":
+					rate.CacheWrite1hPerMillionUSD = item.Price
+				case "web_search_requests":
+					rate.WebSearchPerThousandUSD = item.Price
+				case "web_fetch_requests":
+					rate.WebFetchPerThousandUSD = item.Price
 				default:
 					panic(fmt.Sprintf("pricing: unsupported meter %q in %q", item.Meter, name))
 				}
@@ -140,6 +176,10 @@ func bundledPricingRule(adjustment bundledAdjustment) (PricingRule, error) {
 			rule.OutputScale = target.Multiplier
 		case "cache_write_tokens":
 			rule.CacheWriteScale = target.Multiplier
+		case "cache_write_5m_tokens":
+			rule.CacheWrite5mScale = target.Multiplier
+		case "cache_write_1h_tokens":
+			rule.CacheWrite1hScale = target.Multiplier
 		default:
 			return nil, fmt.Errorf("unknown target meter %q", target.Meter)
 		}
@@ -206,9 +246,13 @@ func validateBundledCard(name string, card bundledCard) error {
 				return fmt.Errorf("invalid effective_until in %q", name)
 			}
 		}
+		selector := schedule.Selector.materialized()
+		if err := validateBundledSelector(card.Model.Provider, selector); err != nil {
+			return fmt.Errorf("invalid selector in %q: %w", name, err)
+		}
 		meters := make(map[string]bool)
 		for _, rate := range schedule.Rates {
-			if !knownBundledMeter(rate.Meter) || rate.Unit != "million_tokens" {
+			if bundledMeterUnit(rate.Meter) != rate.Unit {
 				return fmt.Errorf("invalid rate meter or unit in %q", name)
 			}
 			if meters[rate.Meter] {
@@ -218,6 +262,11 @@ func validateBundledCard(name string, card bundledCard) error {
 			if _, err := parseUSDNanos(rate.Price); err != nil {
 				return fmt.Errorf("invalid price for %s in %q: %w", rate.Meter, name, err)
 			}
+		}
+		// A schedule prices cache writes either at a single rate or split by
+		// retention, never both: the quantities do not overlap.
+		if meters["cache_write_tokens"] && (meters["cache_write_5m_tokens"] || meters["cache_write_1h_tokens"]) {
+			return fmt.Errorf("schedule in %q mixes cache_write_tokens with TTL-specific cache-write meters", name)
 		}
 		adjusted := make(map[string]bool)
 		for _, adjustment := range schedule.Adjustments {
@@ -234,8 +283,13 @@ func validateBundledCard(name string, card bundledCard) error {
 				}
 			}
 		}
+		// Exactly one schedule may match a given instant per selector tuple;
+		// schedules that differ in a selector value may share an interval.
 		matches := 0
 		for _, other := range card.Schedules {
+			if other.Selector.materialized() != selector {
+				continue
+			}
 			start, _ := time.Parse(time.DateOnly, other.EffectiveFrom)
 			if !start.After(from) && (other.EffectiveUntil == "" || from.Before(mustCatalogDate(other.EffectiveUntil))) {
 				matches++
@@ -248,17 +302,64 @@ func validateBundledCard(name string, card bundledCard) error {
 	return nil
 }
 
+// validateBundledSelector enforces the closed selector enums and the
+// provider-specific combinations that are meaningful for an api_equivalent
+// bundled rate. An unsupported combination is a catalog error, not a silently
+// ignored field.
+func validateBundledSelector(provider string, selector bundledSelector) error {
+	if selector.Platform != "first_party" {
+		return fmt.Errorf("unsupported platform %q", selector.Platform)
+	}
+	switch selector.ProcessingMode {
+	case "standard", "batch":
+	case "flex", "priority":
+		if provider != "openai" {
+			return fmt.Errorf("processing mode %q is not a %s billing distinction", selector.ProcessingMode, provider)
+		}
+	case "fast":
+		if provider != "anthropic" {
+			return fmt.Errorf("processing mode %q is not a %s billing distinction", selector.ProcessingMode, provider)
+		}
+	default:
+		return fmt.Errorf("unsupported processing mode %q", selector.ProcessingMode)
+	}
+	switch selector.InferenceGeography {
+	case "global", "regional", "us":
+	default:
+		return fmt.Errorf("unsupported inference geography %q", selector.InferenceGeography)
+	}
+	return nil
+}
+
 func mustCatalogDate(value string) time.Time {
 	parsed, _ := time.Parse(time.DateOnly, value)
 	return parsed
 }
 
-func knownBundledMeter(meter string) bool {
-	return meter == "input_tokens" || meter == "cached_input_tokens" || meter == "output_tokens" || meter == "cache_write_tokens"
+// bundledMeterUnit returns the single unit a meter is denominated in, or ""
+// for an unknown meter. Token meters use million_tokens; request-denominated
+// server-tool meters use thousand_requests.
+func bundledMeterUnit(meter string) string {
+	switch meter {
+	case "input_tokens", "cached_input_tokens", "output_tokens",
+		"cache_write_tokens", "cache_write_5m_tokens", "cache_write_1h_tokens":
+		return "million_tokens"
+	case "web_search_requests", "web_fetch_requests":
+		return "thousand_requests"
+	}
+	return ""
 }
 
+// longContextTargetMeter reports whether a threshold_multiplier adjustment may
+// target the meter. Only token meters are adjustable; request-denominated
+// meters are not tokens and never participate in long-context pricing.
 func longContextTargetMeter(meter string) bool {
-	return meter == "input_tokens" || meter == "cached_input_tokens" || meter == "output_tokens" || meter == "cache_write_tokens"
+	switch meter {
+	case "input_tokens", "cached_input_tokens", "output_tokens",
+		"cache_write_tokens", "cache_write_5m_tokens", "cache_write_1h_tokens":
+		return true
+	}
+	return false
 }
 
 func decodeBundledTOML[T any](name string) T {
