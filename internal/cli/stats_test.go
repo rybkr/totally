@@ -246,6 +246,46 @@ func TestSummarizeStatsKeepsAllUnpricedServiceTiersUnavailable(t *testing.T) {
 	}
 }
 
+func TestStatsPreservesUnavailableSessionCost(t *testing.T) {
+	created := time.Date(2026, time.July, 20, 12, 0, 0, 0, time.UTC)
+	usage := session.TokenUsage{InputTokens: 1_000_000, TotalTokens: 1_000_000}
+	priced := session.Record{
+		CreatedAt: created, TokenUsage: usage,
+		UsageSegments: []session.UsageSegment{{Provider: "openai", Model: "gpt-5", TokenUsage: usage}},
+	}
+	// Records without segments have an unavailable estimate with no Missing
+	// entries. Aggregation must preserve that status, including for legacy data.
+	unpriced := session.Record{CreatedAt: created, TokenUsage: usage}
+	for _, test := range []struct {
+		name    string
+		records []session.Record
+		status  string
+		amount  string
+	}{
+		{"priced only", []session.Record{priced}, "complete", "1.25"},
+		{"mixed", []session.Record{priced, unpriced}, "partial", "1.25"},
+		{"unpriced only", []session.Record{unpriced}, "unavailable", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			grouped := make([]groupedStatsRecord, 0, len(test.records))
+			for _, record := range test.records {
+				grouped = append(grouped, groupedStatsRecord{Record: record, IncludeSessionStats: true})
+			}
+			for _, report := range []statsReport{
+				summarizeStats(test.records, pricing.DefaultCatalog()),
+				summarizeGroupedStats(grouped, pricing.DefaultCatalog()),
+			} {
+				if report.Cost.Status != test.status || stringPtrValue(report.Cost.AmountUSD) != test.amount {
+					t.Fatalf("cost = %+v, want %s amount %q", report.Cost, test.status, test.amount)
+				}
+				if report.TokenUsage.TotalTokens != int64(len(test.records))*1_000_000 {
+					t.Fatalf("aggregation lost tokens: %+v", report.TokenUsage)
+				}
+			}
+		})
+	}
+}
+
 func TestStatsCommandGroupsAndFiltersLikeShow(t *testing.T) {
 	root := t.TempDir()
 	matching := "019f44e4-5c01-7d22-9805-50cecaefde49"

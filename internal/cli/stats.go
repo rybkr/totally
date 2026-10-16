@@ -433,7 +433,7 @@ func finalizeStatsReport(result statsReport, totals costTotals) statsReport {
 			result.Cost.UncertaintyUSD = &uncertaintyValue
 		}
 		result.Cost.Status = "complete"
-		if len(result.Cost.Missing) > 0 || len(result.Cost.Limitations) > 0 {
+		if totals.incomplete || len(result.Cost.Missing) > 0 || len(result.Cost.Limitations) > 0 {
 			result.Cost.Status = "partial"
 		}
 	}
