@@ -363,9 +363,11 @@ func addAcceptedUsage(record *session.Record, provider, model, serviceTier strin
 }
 
 func addUsageSegment(record *session.Record, provider, model, serviceTier string, occurredAt time.Time, usage session.TokenUsage) {
-	if model == "" || usage == (session.TokenUsage{}) {
+	if usage == (session.TokenUsage{}) {
 		return
 	}
+	// Preserve unknown attribution so exports stay additive and pricing can
+	// report the unpriced usage instead of silently omitting it.
 	record.UsageSegments = append(record.UsageSegments, session.UsageSegment{Provider: provider, Model: model, ServiceTier: serviceTier, OccurredAt: occurredAt, TokenUsage: usage})
 }
 

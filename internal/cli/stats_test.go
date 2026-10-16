@@ -38,6 +38,53 @@ func TestStatsCommandAggregatesSessionsAndEmitsJSON(t *testing.T) {
 	}
 }
 
+func TestUnattributedUsageSurvivesExportAndModelGrouping(t *testing.T) {
+	root := t.TempDir()
+	writeRolloutContents(t, root, "sessions/2026/07/20/rollout-2026-07-20T12-00-00-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl", `{"timestamp":"2026-07-20T12:00:00Z","type":"session_meta","payload":{"model_provider":"openai"}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000000,"total_tokens":1000000},"last_token_usage":{"input_tokens":1000000,"total_tokens":1000000}}}}
+{"type":"turn_context","payload":{"model":"gpt-5"}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":2000000,"total_tokens":2000000},"last_token_usage":{"input_tokens":1000000,"total_tokens":1000000}}}}
+`)
+	run := func(args ...string) []byte {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		cmd := newTestRootCommand(t, &stdout, &stderr)
+		cmd.SetArgs(append([]string{"--home", root, "--format", "json"}, args...))
+		if err := cmd.ExecuteContext(context.Background()); err != nil {
+			t.Fatalf("run %v: %v; stderr: %s", args, err, stderr.String())
+		}
+		return stdout.Bytes()
+	}
+	var sessions []sessionListReport
+	if err := json.Unmarshal(run("sessions"), &sessions); err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 || len(sessions[0].UsageSegments) != 2 {
+		t.Fatalf("unknown-model request was lost: %+v", sessions)
+	}
+	record := sessions[0]
+	if record.UsageSegments[0].Model != "" || record.UsageSegments[0].Provider != "openai" || record.UsageSegments[0].TokenUsage.TotalTokens != 1_000_000 {
+		t.Fatalf("unknown-model attribution changed: %+v", record.UsageSegments[0])
+	}
+	if record.TokenUsage.TotalTokens != 2_000_000 || record.Cost.Status != "partial" || record.Cost.AmountUSD == nil || *record.Cost.AmountUSD != "1.25" || len(record.Cost.Missing) != 1 || record.Cost.Missing[0].Model != "" {
+		t.Fatalf("unattributed usage must remain unpriced: %+v", record)
+	}
+	var report groupedStatsReport
+	if err := json.Unmarshal(run("stats", "--by", "model"), &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Groups) != 2 || report.Groups[0].Group != "(unknown)" || report.Groups[0].Stats.Cost.Status != "unavailable" {
+		t.Fatalf("missing unknown-model group: %+v", report)
+	}
+	var groupedTokens int64
+	for _, group := range report.Groups {
+		groupedTokens += group.Stats.TokenUsage.TotalTokens
+	}
+	if groupedTokens != report.Total.TokenUsage.TotalTokens || groupedTokens != 2_000_000 {
+		t.Fatalf("grouped tokens = %d, total = %d", groupedTokens, report.Total.TokenUsage.TotalTokens)
+	}
+}
+
 func TestGroupStatsRecordsByModelAttributesUsageAndAssignsSessionStatsOnce(t *testing.T) {
 	created := time.Date(2026, time.July, 8, 12, 0, 0, 0, time.UTC)
 	record := session.Record{
