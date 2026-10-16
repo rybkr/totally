@@ -160,7 +160,7 @@ provider field:
   AI, Microsoft Foundry) bill different facts under their own invoice identity
   and are distinct platforms, not the first-party provider.
 - `processing_mode`: the mutually exclusive public price path a request took —
-  `standard`, `batch`, `flex`, `priority`, or `fast`. This is deliberately
+  `standard`, `batch`, `flex`, `priority`, `fast`, or `ultrafast`. This is deliberately
   normalized: OpenAI's pay-as-you-go priority processing and Anthropic's
   contractual Priority Tier share a word but not a price model, so an adapter's
   raw field (e.g. Anthropic `service_tier`) is retained separately and mapped to
@@ -181,10 +181,19 @@ therefore share an effective interval; two that share the entire tuple must not
 overlap.
 
 Provider validation restricts which selector values are meaningful for a given
-provider and basis — `flex` is an OpenAI processing mode, `fast` is an Anthropic
-one, and Anthropic's contractual Priority Tier is not an `api_equivalent` public
+provider and basis — `flex` and `ultrafast` are OpenAI processing modes,
+`fast` is supported by both providers, and Anthropic's contractual Priority
+Tier is not an `api_equivalent` public
 rate at all. An unsupported combination is a catalog error, not a silently
 ignored field.
+
+The 2026-10-16 catalog adds OpenAI `fast` and `ultrafast` selector values.
+OpenAI renamed Priority to Fast on 2026-07-30; historical `priority` schedules
+remain valid. Its backward-compatible raw `service_tier: "priority"` must be
+resolved by the adapter, not treated as a second independent price path.
+See the [OpenAI pricing research](../../../docs/research/openai-model-pricing-2026-10-16.md)
+for sources and availability dates. The catalog can export these rates even
+when a transcript adapter cannot yet resolve the request's processing mode.
 
 Rates are materialized absolutely for each selector tuple. The catalog does not
 compose modifiers at lookup time: an Anthropic Sonnet batch-plus-US schedule

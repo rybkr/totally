@@ -243,17 +243,13 @@ func validateRateSelector(rate Rate) []ValidationIssue {
 		issues = append(issues, ValidationIssue{Field: "platform", Message: "must be first_party"})
 	}
 	switch selector.processingMode {
-	case "standard", "batch":
-	case "flex", "priority":
+	case "standard", "batch", "fast":
+	case "flex", "priority", "ultrafast":
 		if rate.Provider == "anthropic" {
 			issues = append(issues, ValidationIssue{Field: "processing_mode", Message: fmt.Sprintf("%q is not an anthropic billing distinction", selector.processingMode)})
 		}
-	case "fast":
-		if rate.Provider == "openai" {
-			issues = append(issues, ValidationIssue{Field: "processing_mode", Message: `"fast" is not an openai billing distinction`})
-		}
 	default:
-		issues = append(issues, ValidationIssue{Field: "processing_mode", Message: "must be standard, batch, flex, priority, or fast"})
+		issues = append(issues, ValidationIssue{Field: "processing_mode", Message: "must be standard, batch, flex, priority, fast, or ultrafast"})
 	}
 	switch selector.inferenceGeography {
 	case "global", "regional", "us":

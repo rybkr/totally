@@ -312,12 +312,12 @@ func validateBundledSelector(provider string, selector bundledSelector) error {
 	}
 	switch selector.ProcessingMode {
 	case "standard", "batch":
-	case "flex", "priority":
-		if provider != "openai" {
+	case "fast":
+		if provider != "openai" && provider != "anthropic" {
 			return fmt.Errorf("processing mode %q is not a %s billing distinction", selector.ProcessingMode, provider)
 		}
-	case "fast":
-		if provider != "anthropic" {
+	case "flex", "priority", "ultrafast":
+		if provider != "openai" {
 			return fmt.Errorf("processing mode %q is not a %s billing distinction", selector.ProcessingMode, provider)
 		}
 	default:

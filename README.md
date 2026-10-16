@@ -199,7 +199,7 @@ billable token usage, so Totally excludes them from token totals and cost.
 
 The bundled catalog also records conditional long-context multipliers. They are
 applied per request when a model charges more above its input-token threshold.
-GPT-5.6 cache writes carry an additional surcharge, but Codex transcripts do
+GPT-5.6 and GPT-6 cache writes carry an additional surcharge, but Codex transcripts do
 not currently distinguish cache-write tokens. Totally bounds the possible
 amount, uses its midpoint as the token-cost estimate, and marks it `partial`.
 When all cost uncertainty is bounded, terminal output shows the half-range as
@@ -211,6 +211,15 @@ has a nonzero request rate, the estimate excludes those charges, reports an
 explicit limitation, and remains `partial`. Overall cost bounds are omitted
 because they cannot bound the missing request charges. An explicitly zero
 request rate adds no uncertainty.
+
+The 2026-10-16 catalog refresh adds 16 model identifiers, including GPT-6 and
+Claude 5.5, and preserves dated price changes. Sources and coverage gaps are
+recorded in the [OpenAI research](docs/research/openai-model-pricing-2026-10-16.md)
+and [Anthropic research](docs/research/anthropic-model-pricing-2026-10-16.md).
+Schedules without established historical prices start on their verification
+date; earlier usage remains unpriced by default. Published batch, fast,
+ultrafast, and regional rates are exported by `prices`; session estimates still
+require the default service tier as described above.
 
 ## Raw files
 

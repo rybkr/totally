@@ -1,6 +1,6 @@
 # Release manifest for the bundled pricing facts.
 schema_version = 1
-catalog_version = "2026-07-16"
+catalog_version = "2026-10-16"
 
 files = [
   "openai/codex-mini-latest.toml",
@@ -38,4 +38,20 @@ files = [
   "anthropic/claude-sonnet-4-5.toml",
   "anthropic/claude-haiku-4-5.toml",
   "anthropic/claude-3-5-haiku.toml",
+  "anthropic/claude-fable-5-1.toml",
+  "anthropic/claude-haiku-5-5.toml",
+  "anthropic/claude-mythos-5-1.toml",
+  "anthropic/claude-opus-5-5.toml",
+  "anthropic/claude-opus-5.toml",
+  "anthropic/claude-sonnet-5-5.toml",
+  "openai/chat-latest.toml",
+  "openai/gpt-5.4-nano-2026-03-17.toml",
+  "openai/gpt-5.4-nano.toml",
+  "openai/gpt-5.6.toml",
+  "openai/gpt-6-astra.toml",
+  "openai/gpt-6-luna.toml",
+  "openai/gpt-6-sol.toml",
+  "openai/gpt-6.1-sol.toml",
+  "openai/gpt-rosalind-discovery.toml",
+  "openai/gpt-rosalind-research.toml",
 ]

@@ -1,0 +1,597 @@
+# Bundled openai API-equivalent price card.
+# Evidence and date policy: docs/research/openai-model-pricing-2026-10-16.md
+schema_version = 1
+
+[model]
+provider = "openai"
+id = "gpt-6.1-sol"
+
+[[schedules]]
+effective_from = "2026-09-29"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://developers.openai.com/api/docs/models/gpt-6.1-sol"
+source_retrieved_at = "2026-10-16"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "2"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.1"
+
+[[schedules.rates]]
+meter = "cache_write_tokens"
+unit = "million_tokens"
+price = "2.5"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "10"
+
+[[schedules.rates]]
+meter = "web_search_requests"
+unit = "thousand_requests"
+price = "10"
+
+[[schedules.adjustments]]
+kind = "threshold_multiplier"
+scope = "request"
+measure = "total_input_tokens"
+operator = "gt"
+threshold = 272000
+
+[[schedules.adjustments.targets]]
+meter = "input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cached_input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "output_tokens"
+multiplier = "1.5"
+
+# Current selector rate verified October 16; earlier price history not established.
+[[schedules]]
+effective_from = "2026-10-16"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://developers.openai.com/api/docs/pricing"
+source_retrieved_at = "2026-10-16"
+
+[schedules.selector]
+inference_geography = "regional"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "2.2"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.11"
+
+[[schedules.rates]]
+meter = "cache_write_tokens"
+unit = "million_tokens"
+price = "2.75"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "11"
+
+[[schedules.rates]]
+meter = "web_search_requests"
+unit = "thousand_requests"
+price = "10"
+
+[[schedules.adjustments]]
+kind = "threshold_multiplier"
+scope = "request"
+measure = "total_input_tokens"
+operator = "gt"
+threshold = 272000
+
+[[schedules.adjustments.targets]]
+meter = "input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cached_input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "output_tokens"
+multiplier = "1.5"
+
+# Current selector rate verified October 16; earlier price history not established.
+[[schedules]]
+effective_from = "2026-10-16"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://developers.openai.com/api/docs/pricing"
+source_retrieved_at = "2026-10-16"
+
+[schedules.selector]
+processing_mode = "batch"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "1"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.05"
+
+[[schedules.rates]]
+meter = "cache_write_tokens"
+unit = "million_tokens"
+price = "1.25"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "5"
+
+[[schedules.rates]]
+meter = "web_search_requests"
+unit = "thousand_requests"
+price = "10"
+
+[[schedules.adjustments]]
+kind = "threshold_multiplier"
+scope = "request"
+measure = "total_input_tokens"
+operator = "gt"
+threshold = 272000
+
+[[schedules.adjustments.targets]]
+meter = "input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cached_input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "output_tokens"
+multiplier = "1.5"
+
+# Current selector rate verified October 16; earlier price history not established.
+[[schedules]]
+effective_from = "2026-10-16"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://developers.openai.com/api/docs/pricing"
+source_retrieved_at = "2026-10-16"
+
+[schedules.selector]
+processing_mode = "batch"
+inference_geography = "regional"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "1.1"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.055"
+
+[[schedules.rates]]
+meter = "cache_write_tokens"
+unit = "million_tokens"
+price = "1.375"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "5.5"
+
+[[schedules.rates]]
+meter = "web_search_requests"
+unit = "thousand_requests"
+price = "10"
+
+[[schedules.adjustments]]
+kind = "threshold_multiplier"
+scope = "request"
+measure = "total_input_tokens"
+operator = "gt"
+threshold = 272000
+
+[[schedules.adjustments.targets]]
+meter = "input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cached_input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "output_tokens"
+multiplier = "1.5"
+
+# Current selector rate verified October 16; earlier price history not established.
+[[schedules]]
+effective_from = "2026-10-16"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://developers.openai.com/api/docs/pricing"
+source_retrieved_at = "2026-10-16"
+
+[schedules.selector]
+processing_mode = "flex"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "1"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.05"
+
+[[schedules.rates]]
+meter = "cache_write_tokens"
+unit = "million_tokens"
+price = "1.25"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "5"
+
+[[schedules.rates]]
+meter = "web_search_requests"
+unit = "thousand_requests"
+price = "10"
+
+[[schedules.adjustments]]
+kind = "threshold_multiplier"
+scope = "request"
+measure = "total_input_tokens"
+operator = "gt"
+threshold = 272000
+
+[[schedules.adjustments.targets]]
+meter = "input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cached_input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "output_tokens"
+multiplier = "1.5"
+
+# Current selector rate verified October 16; earlier price history not established.
+[[schedules]]
+effective_from = "2026-10-16"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://developers.openai.com/api/docs/pricing"
+source_retrieved_at = "2026-10-16"
+
+[schedules.selector]
+processing_mode = "flex"
+inference_geography = "regional"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "1.1"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.055"
+
+[[schedules.rates]]
+meter = "cache_write_tokens"
+unit = "million_tokens"
+price = "1.375"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "5.5"
+
+[[schedules.rates]]
+meter = "web_search_requests"
+unit = "thousand_requests"
+price = "10"
+
+[[schedules.adjustments]]
+kind = "threshold_multiplier"
+scope = "request"
+measure = "total_input_tokens"
+operator = "gt"
+threshold = 272000
+
+[[schedules.adjustments.targets]]
+meter = "input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cached_input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "output_tokens"
+multiplier = "1.5"
+
+# Current selector rate verified October 16; earlier price history not established.
+[[schedules]]
+effective_from = "2026-10-16"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://developers.openai.com/api/docs/pricing"
+source_retrieved_at = "2026-10-16"
+
+[schedules.selector]
+processing_mode = "fast"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "4"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.2"
+
+[[schedules.rates]]
+meter = "cache_write_tokens"
+unit = "million_tokens"
+price = "5"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "20"
+
+[[schedules.rates]]
+meter = "web_search_requests"
+unit = "thousand_requests"
+price = "10"
+
+[[schedules.adjustments]]
+kind = "threshold_multiplier"
+scope = "request"
+measure = "total_input_tokens"
+operator = "gt"
+threshold = 272000
+
+[[schedules.adjustments.targets]]
+meter = "input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cached_input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "output_tokens"
+multiplier = "1.5"
+
+# Current selector rate verified October 16; earlier price history not established.
+[[schedules]]
+effective_from = "2026-10-16"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://developers.openai.com/api/docs/pricing"
+source_retrieved_at = "2026-10-16"
+
+[schedules.selector]
+processing_mode = "fast"
+inference_geography = "regional"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "4.4"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.22"
+
+[[schedules.rates]]
+meter = "cache_write_tokens"
+unit = "million_tokens"
+price = "5.5"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "22"
+
+[[schedules.rates]]
+meter = "web_search_requests"
+unit = "thousand_requests"
+price = "10"
+
+[[schedules.adjustments]]
+kind = "threshold_multiplier"
+scope = "request"
+measure = "total_input_tokens"
+operator = "gt"
+threshold = 272000
+
+[[schedules.adjustments.targets]]
+meter = "input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cached_input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "output_tokens"
+multiplier = "1.5"
+
+# Current selector rate verified October 16; earlier price history not established.
+[[schedules]]
+effective_from = "2026-10-16"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://developers.openai.com/api/docs/pricing"
+source_retrieved_at = "2026-10-16"
+
+[schedules.selector]
+processing_mode = "ultrafast"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "12"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.6"
+
+[[schedules.rates]]
+meter = "cache_write_tokens"
+unit = "million_tokens"
+price = "15"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "60"
+
+[[schedules.rates]]
+meter = "web_search_requests"
+unit = "thousand_requests"
+price = "10"
+
+[[schedules.adjustments]]
+kind = "threshold_multiplier"
+scope = "request"
+measure = "total_input_tokens"
+operator = "gt"
+threshold = 272000
+
+[[schedules.adjustments.targets]]
+meter = "input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cached_input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "output_tokens"
+multiplier = "1.5"
+
+# Current selector rate verified October 16; earlier price history not established.
+[[schedules]]
+effective_from = "2026-10-16"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://developers.openai.com/api/docs/pricing"
+source_retrieved_at = "2026-10-16"
+
+[schedules.selector]
+processing_mode = "ultrafast"
+inference_geography = "regional"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "13.2"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.66"
+
+[[schedules.rates]]
+meter = "cache_write_tokens"
+unit = "million_tokens"
+price = "16.5"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "66"
+
+[[schedules.rates]]
+meter = "web_search_requests"
+unit = "thousand_requests"
+price = "10"
+
+[[schedules.adjustments]]
+kind = "threshold_multiplier"
+scope = "request"
+measure = "total_input_tokens"
+operator = "gt"
+threshold = 272000
+
+[[schedules.adjustments.targets]]
+meter = "input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cached_input_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_tokens"
+multiplier = "2"
+
+[[schedules.adjustments.targets]]
+meter = "output_tokens"
+multiplier = "1.5"

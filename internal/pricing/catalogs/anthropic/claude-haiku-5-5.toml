@@ -1,0 +1,295 @@
+# Bundled anthropic API-equivalent price card.
+# Evidence and date policy: docs/research/anthropic-model-pricing-2026-10-16.md
+schema_version = 1
+
+[model]
+provider = "anthropic"
+id = "claude-haiku-5-5"
+
+[[schedules]]
+effective_from = "2026-10-07"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://platform.claude.com/docs/en/models/haiku-5-5/overview"
+source_retrieved_at = "2026-10-16"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "0.1"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.01"
+
+[[schedules.rates]]
+meter = "cache_write_5m_tokens"
+unit = "million_tokens"
+price = "0.125"
+
+[[schedules.rates]]
+meter = "cache_write_1h_tokens"
+unit = "million_tokens"
+price = "0.2"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "0.5"
+
+[[schedules.rates]]
+meter = "web_search_requests"
+unit = "thousand_requests"
+price = "10"
+
+[[schedules.rates]]
+meter = "web_fetch_requests"
+unit = "thousand_requests"
+price = "0"
+
+[[schedules.adjustments]]
+kind = "threshold_multiplier"
+scope = "request"
+measure = "total_input_tokens"
+operator = "gt"
+threshold = 100000
+
+[[schedules.adjustments.targets]]
+meter = "input_tokens"
+multiplier = "5"
+
+[[schedules.adjustments.targets]]
+meter = "cached_input_tokens"
+multiplier = "5"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_5m_tokens"
+multiplier = "5"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_1h_tokens"
+multiplier = "5"
+
+[[schedules.adjustments.targets]]
+meter = "output_tokens"
+multiplier = "5"
+
+[[schedules]]
+effective_from = "2026-10-07"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://platform.claude.com/docs/en/models/haiku-5-5/overview"
+source_retrieved_at = "2026-10-16"
+
+[schedules.selector]
+inference_geography = "us"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "0.11"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.011"
+
+[[schedules.rates]]
+meter = "cache_write_5m_tokens"
+unit = "million_tokens"
+price = "0.1375"
+
+[[schedules.rates]]
+meter = "cache_write_1h_tokens"
+unit = "million_tokens"
+price = "0.22"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "0.55"
+
+[[schedules.rates]]
+meter = "web_search_requests"
+unit = "thousand_requests"
+price = "10"
+
+[[schedules.rates]]
+meter = "web_fetch_requests"
+unit = "thousand_requests"
+price = "0"
+
+[[schedules.adjustments]]
+kind = "threshold_multiplier"
+scope = "request"
+measure = "total_input_tokens"
+operator = "gt"
+threshold = 100000
+
+[[schedules.adjustments.targets]]
+meter = "input_tokens"
+multiplier = "5"
+
+[[schedules.adjustments.targets]]
+meter = "cached_input_tokens"
+multiplier = "5"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_5m_tokens"
+multiplier = "5"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_1h_tokens"
+multiplier = "5"
+
+[[schedules.adjustments.targets]]
+meter = "output_tokens"
+multiplier = "5"
+
+# Batch availability verified on retrieval date; earlier availability not established.
+[[schedules]]
+effective_from = "2026-10-16"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://platform.claude.com/docs/en/about-claude/pricing"
+source_retrieved_at = "2026-10-16"
+
+[schedules.selector]
+processing_mode = "batch"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "0.05"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.005"
+
+[[schedules.rates]]
+meter = "cache_write_5m_tokens"
+unit = "million_tokens"
+price = "0.0625"
+
+[[schedules.rates]]
+meter = "cache_write_1h_tokens"
+unit = "million_tokens"
+price = "0.1"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "0.25"
+
+[[schedules.rates]]
+meter = "web_search_requests"
+unit = "thousand_requests"
+price = "10"
+
+[[schedules.rates]]
+meter = "web_fetch_requests"
+unit = "thousand_requests"
+price = "0"
+
+[[schedules.adjustments]]
+kind = "threshold_multiplier"
+scope = "request"
+measure = "total_input_tokens"
+operator = "gt"
+threshold = 100000
+
+[[schedules.adjustments.targets]]
+meter = "input_tokens"
+multiplier = "5"
+
+[[schedules.adjustments.targets]]
+meter = "cached_input_tokens"
+multiplier = "5"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_5m_tokens"
+multiplier = "5"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_1h_tokens"
+multiplier = "5"
+
+[[schedules.adjustments.targets]]
+meter = "output_tokens"
+multiplier = "5"
+
+# Batch availability verified on retrieval date; earlier availability not established.
+[[schedules]]
+effective_from = "2026-10-16"
+basis = "api_equivalent"
+currency = "USD"
+source_url = "https://platform.claude.com/docs/en/about-claude/pricing"
+source_retrieved_at = "2026-10-16"
+
+[schedules.selector]
+processing_mode = "batch"
+inference_geography = "us"
+
+[[schedules.rates]]
+meter = "input_tokens"
+unit = "million_tokens"
+price = "0.055"
+
+[[schedules.rates]]
+meter = "cached_input_tokens"
+unit = "million_tokens"
+price = "0.0055"
+
+[[schedules.rates]]
+meter = "cache_write_5m_tokens"
+unit = "million_tokens"
+price = "0.06875"
+
+[[schedules.rates]]
+meter = "cache_write_1h_tokens"
+unit = "million_tokens"
+price = "0.11"
+
+[[schedules.rates]]
+meter = "output_tokens"
+unit = "million_tokens"
+price = "0.275"
+
+[[schedules.rates]]
+meter = "web_search_requests"
+unit = "thousand_requests"
+price = "10"
+
+[[schedules.rates]]
+meter = "web_fetch_requests"
+unit = "thousand_requests"
+price = "0"
+
+[[schedules.adjustments]]
+kind = "threshold_multiplier"
+scope = "request"
+measure = "total_input_tokens"
+operator = "gt"
+threshold = 100000
+
+[[schedules.adjustments.targets]]
+meter = "input_tokens"
+multiplier = "5"
+
+[[schedules.adjustments.targets]]
+meter = "cached_input_tokens"
+multiplier = "5"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_5m_tokens"
+multiplier = "5"
+
+[[schedules.adjustments.targets]]
+meter = "cache_write_1h_tokens"
+multiplier = "5"
+
+[[schedules.adjustments.targets]]
+meter = "output_tokens"
+multiplier = "5"
