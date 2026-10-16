@@ -151,6 +151,9 @@ func filterStatsRecords(records []session.Record, opts statsOptions) []session.R
 	filtered := records[:0]
 	for _, record := range records {
 		if opts.cwd != "" {
+			if record.CWD == "" {
+				continue
+			}
 			cwd, err := filepath.Abs(filepath.Clean(record.CWD))
 			if err != nil || cwd != opts.cwd {
 				continue

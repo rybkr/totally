@@ -141,6 +141,9 @@ func filterShowLatestRecords(records []session.Record, opts showOptions) []sessi
 	filtered := records[:0]
 	for _, record := range records {
 		if opts.cwd != "" {
+			if record.CWD == "" {
+				continue
+			}
 			recordCWD, err := canonicalShowCWD(record.CWD)
 			if err != nil || recordCWD != opts.cwd {
 				continue

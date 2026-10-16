@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -149,6 +150,55 @@ func TestShowCommandLatestFilters(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "Session     "+matchingID) {
 		t.Fatalf("expected matching session %q, got:\n%s", matchingID, stdout.String())
+	}
+}
+
+func TestCWDSelectorsExcludeUnknownDirectories(t *testing.T) {
+	root := t.TempDir()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	encodedCWD, err := json.Marshal(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	knownID := "019f44e4-5c01-7d22-9805-50cecaefde49"
+	unknownID := "019f44e4-5c01-7d22-9805-50cecaefde50"
+	known := strings.ReplaceAll(inspectFixtureForSessionAt(knownID, time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)), `"/tmp/project"`, string(encodedCWD))
+	unknown := strings.ReplaceAll(inspectFixtureForSessionAt(unknownID, time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)), `"/tmp/project"`, `""`)
+	writeRolloutContents(t, root, "sessions/rollout-2026-07-08T12-00-00-"+knownID+".jsonl", known)
+	writeRolloutContents(t, root, "sessions/rollout-2026-07-09T12-00-00-"+unknownID+".jsonl", unknown)
+	for _, command := range []string{"stats", "show"} {
+		t.Run(command, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			cmd := newTestRootCommand(t, &stdout, &stderr)
+			args := []string{command, "--home", root, "--cwd", ".", "--format", "json"}
+			if command == "show" {
+				args = append(args, "--latest")
+			}
+			cmd.SetArgs(args)
+			if err := cmd.ExecuteContext(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if command == "stats" {
+				var report statsReport
+				if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+					t.Fatal(err)
+				}
+				if report.Sessions != 1 || report.TokenUsage.TotalTokens != 125 {
+					t.Fatalf("unknown directory matched --cwd .: %+v", report)
+				}
+			} else {
+				var report showReport
+				if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+					t.Fatal(err)
+				}
+				if report.SessionID != knownID || report.CWD == nil || *report.CWD != cwd {
+					t.Fatalf("unknown directory displaced matching session: %+v", report)
+				}
+			}
+		})
 	}
 }
 
