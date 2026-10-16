@@ -181,8 +181,8 @@ func TestSessionsCommandPricesEarlyAccessModelsWhenConfigured(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &reports); err != nil {
 		t.Fatalf("invalid JSON output: %v\n%s", err, stdout.String())
 	}
-	if len(reports) != 1 || reports[0].Cost.AmountUSD == nil || reports[0].Cost.Status != "complete" {
-		t.Fatalf("expected a complete early-access price, got %+v", reports)
+	if len(reports) != 1 || reports[0].Cost.AmountUSD == nil || *reports[0].Cost.AmountUSD != "0.00107" || reports[0].Cost.Status != "partial" || len(reports[0].Cost.Missing) != 0 || len(reports[0].Cost.Limitations) != 1 || !strings.Contains(reports[0].Cost.Limitations[0], "web_search_requests") {
+		t.Fatalf("expected an early-access token price with unobserved request charges, got %+v", reports)
 	}
 }
 

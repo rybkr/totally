@@ -2,6 +2,7 @@ package pricing
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -228,7 +229,7 @@ func TestEstimateMarksUnknownCacheWriteSurchargePartialForTTLSplitRates(t *testi
 	}
 }
 
-func TestEstimateBoundsCacheWriteSurchargeForBundledAnthropicRate(t *testing.T) {
+func TestEstimateKeepsBundledAnthropicTokenCostPartialWithoutRequestQuantities(t *testing.T) {
 	at, _ := time.Parse(time.DateOnly, "2026-07-16")
 	estimate := DefaultCatalog().Estimate([]session.UsageSegment{{
 		Provider:   "anthropic",
@@ -240,10 +241,8 @@ func TestEstimateBoundsCacheWriteSurchargeForBundledAnthropicRate(t *testing.T) 
 	if estimate.Status != "partial" || estimate.AmountUSD == nil || *estimate.AmountUSD != "1.5" {
 		t.Fatalf("unexpected bundled cache-write estimate: %+v", estimate)
 	}
-	if estimate.LowerBoundUSD == nil || *estimate.LowerBoundUSD != "1" ||
-		estimate.UpperBoundUSD == nil || *estimate.UpperBoundUSD != "2" ||
-		estimate.UncertaintyUSD == nil || *estimate.UncertaintyUSD != "0.5" {
-		t.Fatalf("unexpected bundled cache-write bounds: %+v", estimate)
+	if estimate.LowerBoundUSD != nil || estimate.UpperBoundUSD != nil || estimate.UncertaintyUSD != nil || len(estimate.Limitations) != 2 {
+		t.Fatalf("unobserved search charges must prevent whole-cost bounds: %+v", estimate)
 	}
 }
 
@@ -283,8 +282,8 @@ func TestEstimateAppliesLongContextPricingToGPT56CacheWrites(t *testing.T) {
 	if estimate.Status != "partial" || estimate.AmountUSD == nil || *estimate.AmountUSD != "3.375" {
 		t.Fatalf("unexpected long-context cache-write estimate: %+v", estimate)
 	}
-	if estimate.LowerBoundUSD == nil || *estimate.LowerBoundUSD != "3" || estimate.UpperBoundUSD == nil || *estimate.UpperBoundUSD != "3.75" || estimate.UncertaintyUSD == nil || *estimate.UncertaintyUSD != "0.375" {
-		t.Fatalf("unexpected long-context cache-write bounds: %+v", estimate)
+	if estimate.LowerBoundUSD != nil || estimate.UpperBoundUSD != nil || estimate.UncertaintyUSD != nil || len(estimate.Limitations) != 2 {
+		t.Fatalf("unobserved search charges must prevent whole-cost bounds: %+v", estimate)
 	}
 }
 
@@ -312,11 +311,11 @@ func TestEstimateAppliesLongContextPricingToCachedInput(t *testing.T) {
 				},
 			}}, at)
 
-			if estimate.Status != "complete" || estimate.AmountUSD == nil || *estimate.AmountUSD != tt.want {
+			if estimate.Status != "partial" || estimate.AmountUSD == nil || *estimate.AmountUSD != tt.want {
 				t.Fatalf("unexpected long-context cached-input estimate: %+v", estimate)
 			}
-			if len(estimate.Limitations) != 0 || estimate.LowerBoundUSD != nil || estimate.UpperBoundUSD != nil || estimate.UncertaintyUSD != nil {
-				t.Fatalf("all-cached usage should not have cache-write uncertainty: %+v", estimate)
+			if len(estimate.Limitations) != 1 || !strings.Contains(estimate.Limitations[0], "web_search_requests") || estimate.LowerBoundUSD != nil || estimate.UpperBoundUSD != nil || estimate.UncertaintyUSD != nil {
+				t.Fatalf("all-cached usage should have only the request-charge limitation: %+v", estimate)
 			}
 		})
 	}
@@ -391,6 +390,52 @@ func TestEstimateReportsPartialAndUnavailablePricing(t *testing.T) {
 	unavailable := catalog.Estimate([]session.UsageSegment{{Provider: "test", Model: "unknown", TokenUsage: session.TokenUsage{InputTokens: 1}}}, time.Time{})
 	if unavailable.Status != "unavailable" || unavailable.AmountUSD != nil {
 		t.Fatalf("unexpected unavailable estimate: %+v", unavailable)
+	}
+}
+
+func TestEstimateReportsUnobservedRequestCharges(t *testing.T) {
+	for _, test := range []struct {
+		name, search, fetch, cacheWrite string
+		wantStatus, wantAmount          string
+		wantMeters                      []string
+	}{
+		{name: "no request rates", wantStatus: "complete", wantAmount: "1"},
+		{name: "explicitly free", search: "0.00", fetch: "0", wantStatus: "complete", wantAmount: "1"},
+		{name: "paid search", search: "10", fetch: "0", wantStatus: "partial", wantAmount: "1", wantMeters: []string{"web_search_requests"}},
+		{name: "paid fetch", fetch: "5", wantStatus: "partial", wantAmount: "1", wantMeters: []string{"web_fetch_requests"}},
+		{name: "both paid", search: "10", fetch: "5", wantStatus: "partial", wantAmount: "1", wantMeters: []string{"web_search_requests", "web_fetch_requests"}},
+		{name: "search invalidates whole-cost bounds", search: "10", cacheWrite: "1.25", wantStatus: "partial", wantAmount: "1.125", wantMeters: []string{"web_search_requests"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			catalog := Catalog{}
+			if err := catalog.Override(Rate{
+				Provider: "test", Model: "model", EffectiveFrom: "2020-01-01",
+				InputPerMillionUSD: "1", CachedInputPerMillionUSD: "0.1", OutputPerMillionUSD: "2",
+				WebSearchPerThousandUSD: test.search, WebFetchPerThousandUSD: test.fetch, CacheWritePerMillionUSD: test.cacheWrite,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			segment := session.UsageSegment{Provider: "test", Model: "model", TokenUsage: session.TokenUsage{InputTokens: 500_000, TotalTokens: 500_000}}
+			estimate := catalog.Estimate([]session.UsageSegment{segment, segment}, time.Time{})
+			if estimate.Status != test.wantStatus || estimate.AmountUSD == nil || *estimate.AmountUSD != test.wantAmount {
+				t.Fatalf("unexpected estimate: %+v", estimate)
+			}
+			wantLimitations := len(test.wantMeters)
+			if test.cacheWrite != "" {
+				wantLimitations++
+			}
+			if len(estimate.Limitations) != wantLimitations {
+				t.Fatalf("limitations = %v, want %d unique limitations", estimate.Limitations, wantLimitations)
+			}
+			for _, meter := range test.wantMeters {
+				if !strings.Contains(strings.Join(estimate.Limitations, "\n"), meter) {
+					t.Fatalf("missing limitation for %s: %+v", meter, estimate)
+				}
+			}
+			if estimate.LowerBoundUSD != nil || estimate.UpperBoundUSD != nil || estimate.UncertaintyUSD != nil {
+				t.Fatalf("unobserved request charges cannot have whole-cost bounds: %+v", estimate)
+			}
+		})
 	}
 }
 

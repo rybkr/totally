@@ -201,8 +201,16 @@ The bundled catalog also records conditional long-context multipliers. They are
 applied per request when a model charges more above its input-token threshold.
 GPT-5.6 cache writes carry an additional surcharge, but Codex transcripts do
 not currently distinguish cache-write tokens. Totally bounds the possible
-amount, uses its midpoint as the estimate, and marks it `partial`; terminal
-output shows the half-range as `±`, and JSON includes the explicit bounds.
+amount, uses its midpoint as the token-cost estimate, and marks it `partial`.
+When all cost uncertainty is bounded, terminal output shows the half-range as
+`±`, and JSON includes the explicit bounds.
+
+The catalog also records web-search and web-fetch request rates, but normalized
+usage does not yet carry these request quantities. When an applicable schedule
+has a nonzero request rate, the estimate excludes those charges, reports an
+explicit limitation, and remains `partial`. Overall cost bounds are omitted
+because they cannot bound the missing request charges. An explicitly zero
+request rate adds no uncertainty.
 
 ## Raw files
 

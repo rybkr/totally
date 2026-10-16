@@ -357,6 +357,22 @@ func (c Catalog) Estimate(segments []session.UsageSegment, at time.Time) Estimat
 			unbounded = true
 			continue
 		}
+		// Normalized usage does not yet carry server-tool request quantities.
+		// Retain the token estimate, but do not treat missing quantities as zero
+		// or claim that token-only bounds cover the entire cost.
+		for _, meter := range []struct{ name, price string }{
+			{"web_search_requests", rate.WebSearchPerThousandUSD},
+			{"web_fetch_requests", rate.WebFetchPerThousandUSD},
+		} {
+			if meter.price == "" {
+				continue
+			}
+			price, err := parseUSDNanos(meter.price)
+			if err != nil || price != 0 {
+				addUniqueString(&result.Limitations, meter.name+" quantities are not represented in normalized usage; request charges are excluded")
+				unbounded = true
+			}
+		}
 		if hasUnpriceableTokenBreakdown(segment.TokenUsage) {
 			lower, upper, err := tokenBreakdownBoundsNanos(segment.TokenUsage, rate)
 			if err != nil {
