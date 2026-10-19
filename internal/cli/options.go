@@ -333,23 +333,21 @@ func parseRelativeDuration(value string) (time.Duration, bool, error) {
 	return 0, false, nil
 }
 
-func filterFilesByTimeRange(files []session.FileRef, bounds timeRange) []session.FileRef {
+func (bounds timeRange) contains(createdAt time.Time) bool {
 	if bounds.since.IsZero() && bounds.until.IsZero() {
-		return files
+		return true
 	}
+	return !createdAt.IsZero() &&
+		(bounds.since.IsZero() || !createdAt.Before(bounds.since)) &&
+		(bounds.until.IsZero() || !createdAt.After(bounds.until))
+}
 
+func filterFilesByTimeRange(files []session.FileRef, bounds timeRange) []session.FileRef {
 	filtered := files[:0]
 	for _, file := range files {
-		if file.CreatedAt.IsZero() {
-			continue
+		if bounds.contains(file.CreatedAt) {
+			filtered = append(filtered, file)
 		}
-		if !bounds.since.IsZero() && file.CreatedAt.Before(bounds.since) {
-			continue
-		}
-		if !bounds.until.IsZero() && file.CreatedAt.After(bounds.until) {
-			continue
-		}
-		filtered = append(filtered, file)
 	}
 	return filtered
 }

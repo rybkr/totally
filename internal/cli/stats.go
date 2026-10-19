@@ -87,11 +87,11 @@ func runStats(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts 
 	if err := validateStatsBy(opts.by); err != nil {
 		return usageError{err: err}
 	}
-	files, err := discoverSessionFiles(cmd, globals)
+	parsers, err := globals.parsers()
 	if err != nil {
 		return err
 	}
-	records, err := parseSessionFiles(cmd, globals, files)
+	records, err := parseDiscoveredSessions(cmd, globals, parsers)
 	if err != nil {
 		return err
 	}

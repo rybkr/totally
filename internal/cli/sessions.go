@@ -64,17 +64,16 @@ func runSessions(cmd *cobra.Command, stdout io.Writer, globals globalOptions, op
 		return err
 	}
 
-	files, err := discoverSessionFiles(cmd, globals)
+	parsers, err := globals.parsers()
 	if err != nil {
 		return err
 	}
 
-	records, err := parseSessionFiles(cmd, globals, files)
+	records, err := parseDiscoveredSessions(cmd, globals, parsers)
 	if err != nil {
 		return err
 	}
 
-	sortRecordsByCreated(records)
 	if opts.latest {
 		sortRecordsByUpdated(records)
 		if opts.limit == 0 {

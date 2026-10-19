@@ -251,11 +251,19 @@ func isArchivedFile(file session.FileRef) bool {
 }
 
 func discoverSessionFiles(cmd *cobra.Command, globals globalOptions) ([]session.FileRef, error) {
-	finders, err := globals.finders()
+	bounds, err := globals.timeRange(time.Now())
 	if err != nil {
 		return nil, err
 	}
-	bounds, err := globals.timeRange(time.Now())
+	files, err := discoverAllSessionFiles(cmd, globals)
+	if err != nil {
+		return nil, err
+	}
+	return filterFilesByTimeRange(files, bounds), nil
+}
+
+func discoverAllSessionFiles(cmd *cobra.Command, globals globalOptions) ([]session.FileRef, error) {
+	finders, err := globals.finders()
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +280,7 @@ func discoverSessionFiles(cmd *cobra.Command, globals globalOptions) ([]session.
 		files = append(files, found...)
 	}
 
-	return filterFilesByTimeRange(files, bounds), nil
+	return files, nil
 }
 
 func sortFilesByCreated(files []session.FileRef) {

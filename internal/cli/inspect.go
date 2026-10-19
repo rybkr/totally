@@ -94,11 +94,7 @@ func runShow(cmd *cobra.Command, stdout io.Writer, globals globalOptions, opts s
 			}
 			opts.cwd = cwd
 		}
-		files, err := discoverSessionFiles(cmd, globals)
-		if err != nil {
-			return err
-		}
-		records, err := parseSessionFilesWithParsers(cmd, parsers, files)
+		records, err := parseDiscoveredSessions(cmd, globals, parsers)
 		if err != nil {
 			return err
 		}
@@ -186,7 +182,13 @@ func hasShowProvider(record session.Record, want string) bool {
 }
 
 func parseDiscoveredSessions(cmd *cobra.Command, globals globalOptions, parsers []session.Parser) ([]session.Record, error) {
-	files, err := discoverSessionFiles(cmd, globals)
+	bounds, err := globals.timeRange(time.Now())
+	if err != nil {
+		return nil, err
+	}
+	// Filename timestamps lack a timezone and may have been written on another
+	// machine. Filter only after parsing the timestamp that we actually export.
+	files, err := discoverAllSessionFiles(cmd, globals)
 	if err != nil {
 		return nil, err
 	}
@@ -194,6 +196,13 @@ func parseDiscoveredSessions(cmd *cobra.Command, globals globalOptions, parsers 
 	if err != nil {
 		return nil, err
 	}
+	filtered := records[:0]
+	for _, record := range records {
+		if bounds.contains(record.CreatedAt) {
+			filtered = append(filtered, record)
+		}
+	}
+	records = filtered
 	sortRecordsByCreated(records)
 	return records, nil
 }

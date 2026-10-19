@@ -46,6 +46,11 @@ These filters apply wherever they are meaningful:
 Time values accept relative durations (`7d`), dates (`2026-07-01`), RFC3339
 timestamps, and `today`, `yesterday`, or `now`.
 
+For `sessions`, `stats`, and `show --latest`, time filters use the parsed
+session start time. If the transcript has no timestamps, the filename time is
+the fallback. The raw `files` listing uses filename timestamps interpreted in
+the current local timezone.
+
 ## Data sources
 
 ```text
