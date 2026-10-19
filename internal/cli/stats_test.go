@@ -38,6 +38,88 @@ func TestStatsCommandAggregatesSessionsAndEmitsJSON(t *testing.T) {
 	}
 }
 
+func TestForkReportsExcludeCopiedParentActivity(t *testing.T) {
+	const (
+		parentID = "019f587e-f771-7f43-97db-74bb1b781ce8"
+		childID  = "019f587f-e759-7e51-9ac9-5ecba7ac3cb6"
+		parent   = `{"timestamp":"2026-07-12T22:40:00Z","type":"session_meta","payload":{"id":"` + parentID + `","model_provider":"openai"}}
+{"type":"turn_context","payload":{"model":"gpt-5"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Parent task"}]}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[]}}
+{"type":"response_item","payload":{"type":"function_call"}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110},"last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}
+`
+		childMeta = `{"timestamp":"2026-07-12T22:45:00Z","type":"session_meta","payload":{"id":"` + childID + `","session_id":"` + parentID + `","forked_from_id":"` + parentID + `","model_provider":"openai"}}
+`
+		firstTurn = `{"type":"event_msg","payload":{"type":"task_started","turn_id":"019f587f-e7c0-7873-914d-865a3bbb115b"}}
+{"type":"turn_context","payload":{"model":"gpt-5-mini"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Child task"}]}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[]}}
+{"type":"response_item","payload":{"type":"custom_tool_call"}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":150,"output_tokens":15,"total_tokens":165},"last_token_usage":{"input_tokens":50,"output_tokens":5,"total_tokens":55}}}}
+`
+		secondTurn = `{"type":"event_msg","payload":{"type":"turn_started","turn_id":"019f587f-e8c0-7873-914d-865a3bbb115b"}}
+{"type":"turn_context","payload":{"model":"gpt-5-mini"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Child follow-up"}]}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[]}}
+{"type":"response_item","payload":{"type":"function_call"}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":170,"output_tokens":17,"total_tokens":187},"last_token_usage":{"input_tokens":20,"output_tokens":2,"total_tokens":22}}}}
+`
+	)
+	for _, test := range []struct {
+		name, activity string
+		turns          int
+		tokens         int64
+	}{
+		{name: "before child starts"},
+		{name: "first child turn", activity: firstTurn, turns: 1, tokens: 55},
+		{name: "generic turn boundary", activity: strings.Replace(firstTurn, "task_started", "turn_started", 1), turns: 1, tokens: 55},
+		{name: "later child turn retains earlier activity", activity: firstTurn + secondTurn, turns: 2, tokens: 77},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeRolloutContents(t, root, "sessions/rollout-2026-07-12T22-40-00-"+parentID+".jsonl", parent)
+			writeRolloutContents(t, root, "sessions/rollout-2026-07-12T22-45-00-"+childID+".jsonl", childMeta+parent+test.activity)
+			run := func(command string, target any) {
+				t.Helper()
+				var stdout, stderr bytes.Buffer
+				cmd := newTestRootCommand(t, &stdout, &stderr)
+				cmd.SetArgs([]string{command, "--home", root, "--format", "json"})
+				if err := cmd.ExecuteContext(context.Background()); err != nil {
+					t.Fatalf("run %s: %v; stderr: %s", command, err, stderr.String())
+				}
+				if stderr.Len() != 0 {
+					t.Fatalf("unexpected %s warning: %s", command, stderr.String())
+				}
+				if err := json.Unmarshal(stdout.Bytes(), target); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var reports []sessionListReport
+			run("sessions", &reports)
+			if len(reports) != 2 || reports[0].SessionID != childID {
+				t.Fatalf("expected child and parent sessions, got %+v", reports)
+			}
+			child := reports[0]
+			wantPrompt, wantPrompts := "", 1
+			if test.turns > 0 {
+				wantPrompt, wantPrompts = "Child task", 2
+			}
+			if child.FirstPrompt != wantPrompt || child.Turns != test.turns || child.Messages != 2*test.turns || child.ToolCalls != test.turns {
+				t.Errorf("child activity: prompt=%q turns=%d messages=%d tools=%d; want prompt=%q turns=%d messages=%d tools=%d", child.FirstPrompt, child.Turns, child.Messages, child.ToolCalls, wantPrompt, test.turns, 2*test.turns, test.turns)
+			}
+			if child.TokenUsage.TotalTokens != test.tokens {
+				t.Errorf("child tokens = %d, want %d", child.TokenUsage.TotalTokens, test.tokens)
+			}
+			var stats statsReport
+			run("stats", &stats)
+			if stats.Sessions != 2 || stats.Prompts != wantPrompts || stats.Turns != 1+test.turns || stats.Messages != 2+2*test.turns || stats.ToolCalls != 1+test.turns || stats.TokenUsage.TotalTokens != 110+test.tokens {
+				t.Errorf("parent and child activity was not counted once: %+v", stats)
+			}
+		})
+	}
+}
+
 func TestUnattributedUsageSurvivesExportAndModelGrouping(t *testing.T) {
 	root := t.TempDir()
 	writeRolloutContents(t, root, "sessions/2026/07/20/rollout-2026-07-20T12-00-00-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl", `{"timestamp":"2026-07-20T12:00:00Z","type":"session_meta","payload":{"model_provider":"openai"}}

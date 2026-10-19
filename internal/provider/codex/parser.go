@@ -327,6 +327,13 @@ func clearInheritedUsage(record *session.Record, state *parseState) {
 	if !state.hasEmbeddedHistory || state.clearedInheritedUsage {
 		return
 	}
+	// Copied history is context for the child, not activity performed by it.
+	// Keep the cumulative counter baseline in state so child token deltas
+	// still exclude the parent's usage.
+	record.FirstPrompt = ""
+	record.Turns = 0
+	record.Messages = 0
+	record.ToolCalls = 0
 	record.TokenUsage = session.TokenUsage{}
 	record.UsageSegments = nil
 	state.activeProvider = state.canonicalProvider
