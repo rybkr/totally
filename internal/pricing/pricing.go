@@ -3,6 +3,7 @@ package pricing
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -665,6 +666,12 @@ func parseUSDNanos(text string) (int64, error) {
 	if len(fraction) > 9 {
 		return 0, fmt.Errorf("expected at most 9 decimal places")
 	}
+	// ParseInt accepts signs, but a fractional part must contain only digits.
+	for _, digit := range fraction {
+		if digit < '0' || digit > '9' {
+			return 0, fmt.Errorf("expected a non-negative USD amount")
+		}
+	}
 	fraction += strings.Repeat("0", 9-len(fraction))
 	fractionNanos := int64(0)
 	if fraction != "" {
@@ -672,6 +679,9 @@ func parseUSDNanos(text string) (int64, error) {
 		if err != nil {
 			return 0, fmt.Errorf("expected a non-negative USD amount")
 		}
+	}
+	if whole > (math.MaxInt64-fractionNanos)/nanosPerUSD {
+		return 0, fmt.Errorf("USD amount exceeds supported range")
 	}
 	return whole*nanosPerUSD + fractionNanos, nil
 }

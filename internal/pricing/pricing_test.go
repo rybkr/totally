@@ -1,6 +1,7 @@
 package pricing
 
 import (
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -8,6 +9,37 @@ import (
 
 	"github.com/rybkr/totally/internal/session"
 )
+
+func TestParseUSDNanos(t *testing.T) {
+	for _, test := range []struct {
+		text string
+		want int64
+	}{
+		{"0", 0},
+		{"1.25", 1_250_000_000},
+		{" 12.3400 ", 12_340_000_000},
+		{"0.000000001", 1},
+		{"9223372036.854775807", math.MaxInt64},
+	} {
+		t.Run(test.text, func(t *testing.T) {
+			got, err := parseUSDNanos(test.text)
+			if err != nil || got != test.want {
+				t.Fatalf("parseUSDNanos(%q) = %d, %v; want %d", test.text, got, err, test.want)
+			}
+		})
+	}
+	for _, text := range []string{
+		"0.-1", "1.-1", "0.+1", "1.+1", "0.-", "0.+",
+		"-0.1", "1.2.3", "1. 2", "1.a", "1e3", "0.0000000001",
+		"9223372036.854775808", "9223372037", "9223372036854775807",
+	} {
+		t.Run("invalid/"+text, func(t *testing.T) {
+			if got, err := parseUSDNanos(text); err == nil {
+				t.Fatalf("parseUSDNanos(%q) accepted invalid amount as %d", text, got)
+			}
+		})
+	}
+}
 
 func TestDefaultCatalogContainsSupportedCodexAndRelatedModels(t *testing.T) {
 	rates := DefaultCatalog().Rates()

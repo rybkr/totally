@@ -195,6 +195,44 @@ unknown = "value"
 	}
 }
 
+func TestMalformedPriceIsRejectedBeforeReportingCosts(t *testing.T) {
+	config := writeConfig(t, `[prices."openai/gpt-5"]
+input_per_million_usd = "0.-1"
+cached_input_per_million_usd = "0"
+output_per_million_usd = "0"
+effective_from = "2020-01-01"
+`)
+	root := t.TempDir()
+	writeRolloutContents(t, root, "sessions/rollout-2026-07-08T20-20-44-019f44e4-5c01-7d22-9805-50cecaefde49.jsonl", inspectFixture())
+	for _, command := range []string{"verify", "sessions", "stats", "show"} {
+		t.Run(command, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			cmd := newTestRootCommand(t, &stdout, &stderr)
+			args := []string{command}
+			if command == "verify" {
+				args = []string{"prices", "verify"}
+			} else if command == "show" {
+				args = append(args, "--latest")
+			}
+			cmd.SetArgs(append(args, "--config", config, "--home", root, "--format", "json"))
+			if err := cmd.ExecuteContext(context.Background()); err == nil {
+				t.Fatal("malformed price must fail validation")
+			}
+			if command == "verify" {
+				var report pricesVerifyReport
+				if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+					t.Fatal(err)
+				}
+				if report.Valid || len(report.Issues) != 1 || report.Issues[0].Path != `prices."openai/gpt-5".input_per_million_usd` {
+					t.Fatalf("expected an input-rate diagnostic, got %+v", report)
+				}
+			} else if stdout.Len() != 0 {
+				t.Fatalf("invalid pricing must not produce a cost report: %s", stdout.String())
+			}
+		})
+	}
+}
+
 func TestPricesVerifyPrintsDiagnosticOutput(t *testing.T) {
 	config := writeConfig(t, `[prices."openai/gpt-5"]
 input_per_million_usd = "invalid"
